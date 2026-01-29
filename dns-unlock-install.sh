@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.7.0"
+VERSION="1.8.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="支持 Geosite 动态域名分类解锁，新增 update-domains 命令"
+CHANGELOG="Geosite 默认支持全量非中国域名 (geolocation-!cn)，性能大幅优化"
 
 set -e
 
@@ -16,7 +16,7 @@ set -e
 LOG_LEVEL="info"
 PROXY_ENGINE="sniproxy" 
 WARP_SOCKS="127.0.0.1:40000"
-GEOSITE_CATEGORIES="netflix,disney,hbo,hulu,amazon,youtube,spotify,openai,gemini" # 默认 Geosite 分类
+GEOSITE_CATEGORIES="geolocation-!cn" # 默认 Geosite 分类设为全量非中国域名
 
 # 颜色定义
 RED='\033[0;31m'
@@ -119,13 +119,13 @@ check_root() {
     log_info "使用入口 IP: ${GREEN}$PUBLIC_IP${NC}"
 }
 
-# 从 Geosite 下载并生成规则
+# 从 Geosite 下载并生成规则 (优化版)
 fetch_geosite_category() {
     local category=$1
     local output_file=$2
     local source_url="https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/${category}"
     
-    log_info "正在从 Geosite 获取分类: ${YELLOW}${category}${NC} ..."
+    log_info "正在从 Geosite 获取分类: ${YELLOW}${category}${NC} (这可能包含数千个域名)..."
     
     local tmp_data=$(curl -s "$source_url")
     if [[ -z "$tmp_data" || "$tmp_data" == "404: Not Found" ]]; then
@@ -133,47 +133,47 @@ fetch_geosite_category() {
         return
     fi
     
-    # 解析域名:
-    # 1. 提取普通行 (不以 # 开头，不包含 :)
-    # 2. 提取 full: 开头的域名
-    # 3. 排除空行
-    echo "$tmp_data" | grep -v '^#' | grep -v '^$' | while read -r line; do
-        local domain=""
-        if [[ "$line" =~ ^full: ]]; then
-            domain="${line#full:}"
-        elif [[ ! "$line" =~ : ]]; then
-            domain="$line"
-        fi
-        
-        if [[ -n "$domain" ]]; then
-            # 写入 IPv4 劫持和 IPv6 阻断
-            echo "address=/${domain}/$PUBLIC_IP" >> "$output_file"
-            echo "address=/${domain}/::" >> "$output_file"
-        fi
-    done
+    # 使用 awk 高效处理大批量域名
+    echo "$tmp_data" | awk -v ip="$PUBLIC_IP" '
+    !/^#/ && !/^$/ {
+        domain = ""
+        if ($0 ~ /^full:/) {
+            domain = substr($0, 6)
+        } else if ($0 !~ /:/) {
+            domain = $0
+        }
+        if (domain != "" && domain !~ /^$/) {
+            # 输出 IPv4 劫持和 IPv6 阻断
+            printf "address=/%s/%s\n", domain, ip
+            printf "address=/%s/::\n", domain
+        }
+    }' >> "$output_file"
 }
 
 # 选择解锁范围
 select_unlock_scope() {
     echo ""
     echo -e "${BLUE}请选择解锁域名范围:${NC}"
-    echo -e "  ${GREEN}1)${NC} 基础列表 (内置常用流媒体 + Gemini)"
-    echo -e "  ${GREEN}2)${NC} Geosite 列表 (动态下载，支持更多 AI 和流媒体)"
+    echo -e "  ${GREEN}1)${NC} 基础列表 (常用流媒体 + Gemini)"
+    echo -e "  ${GREEN}2)${NC} 全量 Geosite (默认解锁几乎所有海外网站，适合全能解锁)"
     echo ""
     
     if [ -t 0 ]; then
-        read -p "请输入选项 [1-2] (默认: 1): " scope_choice
+        read -p "请输入选项 [1-2] (默认: 2): " scope_choice
     elif [ -e /dev/tty ]; then
-        read -p "请输入选项 [1-2] (默认: 1): " scope_choice < /dev/tty
+        read -p "请输入选项 [1-2] (默认: 2): " scope_choice < /dev/tty
     else
-        scope_choice="1"
+        scope_choice="2"
     fi
     
-    if [[ "$scope_choice" == "2" ]]; then
+    if [[ "$scope_choice" == "1" ]]; then
+        UNLOCK_MODE="basic"
+        log_info "已选择基础列表模式"
+    else
         UNLOCK_MODE="geosite"
         echo ""
         echo -e "${YELLOW}请输入要解锁的 Geosite 分类（逗号分隔）${NC}"
-        echo -e "参考: netflix,openai,disney,google,telegram,twitter,tiktok"
+        echo -e "支持: geolocation-!cn (全量), netflix, openai, telegram 等"
         if [ -t 0 ]; then
             read -p "分类列表 [默认: $GEOSITE_CATEGORIES]: " user_categories
         elif [ -e /dev/tty ]; then
@@ -185,10 +185,7 @@ select_unlock_scope() {
         if [[ -n "$user_categories" ]]; then
             GEOSITE_CATEGORIES="$user_categories"
         fi
-        log_info "已选择 Geosite 模式，分类: ${GREEN}$GEOSITE_CATEGORIES${NC}"
-    else
-        UNLOCK_MODE="basic"
-        log_info "已选择基础列表模式"
+        log_info "已选择全量 Geosite 模式，分类: ${GREEN}$GEOSITE_CATEGORIES${NC}"
     fi
 }
 
@@ -494,7 +491,8 @@ port=53
 no-resolv
 server=8.8.8.8
 server=1.1.1.1
-cache-size=10000
+cache-size=20480
+dns-forward-max=1024
 
 # 允许任意 IP 查询（重要：解锁服务器必须开启）
 listen-address=0.0.0.0

@@ -95,6 +95,7 @@ tail -f /var/log/dnsmasq.log
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
+| v1.8.0 | 2026-01-29 | Geosite 默认支持全量非中国域名 (geolocation-!cn)，性能大幅优化 |
 | v1.7.0 | 2026-01-29 | 支持 Geosite 动态域名分类解锁，新增 --update-domains 命令 |
 | v1.6.1 | 2026-01-29 | 新增对 Google Gemini AI 的解锁支持 |
 | v1.6.0 | 2026-01-29 | 支持 GOST 代理引擎，优化对 WARP SOCKS5 的兼容性 |
