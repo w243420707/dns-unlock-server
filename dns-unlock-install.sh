@@ -7,6 +7,9 @@
 
 set -e
 
+# 默认日志等级
+LOG_LEVEL="info"
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,6 +21,32 @@ NC='\033[0m' # 无颜色
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# 选择日志等级
+select_log_level() {
+    echo ""
+    echo -e "${BLUE}请选择日志记录等级:${NC}"
+    echo -e "  ${GREEN}1)${NC} DEBUG - 详细调试信息（包含所有 DNS 查询日志）"
+    echo -e "  ${GREEN}2)${NC} INFO  - 标准信息（推荐，记录主要操作）"
+    echo -e "  ${GREEN}3)${NC} WARN  - 仅警告和错误（最少日志，适合生产环境）"
+    echo ""
+    read -p "请输入选项 [1-3] (默认: 2): " choice
+    
+    case "$choice" in
+        1)
+            LOG_LEVEL="debug"
+            log_info "已选择日志等级: DEBUG"
+            ;;
+        3)
+            LOG_LEVEL="warn"
+            log_info "已选择日志等级: WARN"
+            ;;
+        *)
+            LOG_LEVEL="info"
+            log_info "已选择日志等级: INFO"
+            ;;
+    esac
+}
 
 # 检查是否为 root 用户
 check_root() {
@@ -86,13 +115,27 @@ configure_sniproxy() {
     log_info "配置 SNI Proxy..."
     
     mkdir -p /etc/sniproxy
-    cat > /etc/sniproxy/sniproxy.conf << 'EOF'
+    
+    # 根据日志等级设置 SNI Proxy 日志优先级
+    case "$LOG_LEVEL" in
+        debug)
+            SNIPROXY_LOG_PRIORITY="debug"
+            ;;
+        info)
+            SNIPROXY_LOG_PRIORITY="notice"
+            ;;
+        warn)
+            SNIPROXY_LOG_PRIORITY="warning"
+            ;;
+    esac
+    
+    cat > /etc/sniproxy/sniproxy.conf << EOF
 user daemon
 pidfile /var/run/sniproxy.pid
 
 error_log {
     filename /var/log/sniproxy/error.log
-    priority notice
+    priority $SNIPROXY_LOG_PRIORITY
 }
 
 listen 80 {
@@ -151,16 +194,33 @@ configure_dnsmasq() {
         cp /etc/dnsmasq.conf /etc/dnsmasq.conf.bak
     fi
     
+    # 根据日志等级设置 Dnsmasq 日志配置
+    case "$LOG_LEVEL" in
+        debug)
+            DNSMASQ_LOG_CONFIG="log-queries
+log-facility=/var/log/dnsmasq.log
+log-dhcp"
+            ;;
+        info)
+            DNSMASQ_LOG_CONFIG="log-queries
+log-facility=/var/log/dnsmasq.log"
+            ;;
+        warn)
+            DNSMASQ_LOG_CONFIG="log-facility=/var/log/dnsmasq.log
+# 仅记录警告和错误，不记录查询"
+            ;;
+    esac
+    
     # 写入主配置
     cat > /etc/dnsmasq.conf << EOF
 # DNS 解锁服务器配置
+# 日志等级: $LOG_LEVEL
 port=53
 no-resolv
 server=8.8.8.8
 server=1.1.1.1
 cache-size=10000
-log-queries
-log-facility=/var/log/dnsmasq.log
+$DNSMASQ_LOG_CONFIG
 
 # 引入流媒体解锁规则
 conf-dir=/etc/dnsmasq.d/,*.conf
@@ -262,6 +322,7 @@ show_result() {
     echo -e "服务状态:"
     echo -e "  - Dnsmasq:   $(systemctl is-active dnsmasq)"
     echo -e "  - SNI Proxy: $(systemctl is-active sniproxy)"
+    echo -e "  - 日志等级:  ${BLUE}$LOG_LEVEL${NC}"
     echo ""
     echo -e "${YELLOW}在你的代理节点上，将 DNS 配置为:${NC}"
     echo -e "  ${BLUE}$PUBLIC_IP${NC}"
@@ -288,6 +349,7 @@ main() {
     
     check_root
     get_public_ip
+    select_log_level
     stop_conflicting_services
     install_dependencies
     install_sniproxy
