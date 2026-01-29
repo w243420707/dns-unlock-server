@@ -233,18 +233,19 @@ configure_sniproxy() {
         info)
             SNIPROXY_LOG_PRIORITY="notice"
             ;;
-        warn)
+        warn|*)
             SNIPROXY_LOG_PRIORITY="warning"
             ;;
     esac
     
-    cat > /etc/sniproxy/sniproxy.conf << EOF
+    # 写入 SNI Proxy 配置文件
+    cat > /etc/sniproxy/sniproxy.conf << SNICONF
 user daemon
-pidfile /var/run/sniproxy.pid
+pidfile /run/sniproxy.pid
 
 error_log {
     filename /var/log/sniproxy/error.log
-    priority $SNIPROXY_LOG_PRIORITY
+    priority ${SNIPROXY_LOG_PRIORITY}
 }
 
 listen 80 {
@@ -266,7 +267,7 @@ table http_hosts {
 table https_hosts {
     .* *:443
 }
-EOF
+SNICONF
     
     # 创建 systemd 服务
     cat > /etc/systemd/system/sniproxy.service << 'EOF'
@@ -276,7 +277,7 @@ After=network.target
 
 [Service]
 Type=forking
-PIDFile=/var/run/sniproxy.pid
+PIDFile=/run/sniproxy.pid
 ExecStart=/usr/local/sbin/sniproxy -c /etc/sniproxy/sniproxy.conf
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
