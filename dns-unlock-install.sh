@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.3.1"
+VERSION="1.3.2"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="修复 autoconf 版本过低导致 SNI Proxy 编译失败的问题"
+CHANGELOG="修复 SNI Proxy 启动失败问题，添加端口冲突检测"
 
 set -e
 
@@ -205,7 +205,25 @@ install_sniproxy() {
 configure_sniproxy() {
     log_info "配置 SNI Proxy..."
     
+    # 检查端口 80 和 443 是否被占用
+    log_info "检查端口占用情况..."
+    for port in 80 443; do
+        if ss -tlnp 2>/dev/null | grep -q ":$port "; then
+            PROCESS=$(ss -tlnp 2>/dev/null | grep ":$port " | head -1)
+            log_warn "端口 $port 已被占用: $PROCESS"
+            log_info "尝试停止占用端口的服务..."
+            # 尝试停止常见的 Web 服务
+            systemctl stop nginx 2>/dev/null || true
+            systemctl stop apache2 2>/dev/null || true
+            systemctl stop httpd 2>/dev/null || true
+            # 等待端口释放
+            sleep 2
+        fi
+    done
+    
     mkdir -p /etc/sniproxy
+    mkdir -p /var/log/sniproxy
+    chown daemon:daemon /var/log/sniproxy 2>/dev/null || true
     
     # 根据日志等级设置 SNI Proxy 日志优先级
     case "$LOG_LEVEL" in
@@ -249,8 +267,6 @@ table https_hosts {
     .* *:443
 }
 EOF
-
-    mkdir -p /var/log/sniproxy
     
     # 创建 systemd 服务
     cat > /etc/systemd/system/sniproxy.service << 'EOF'
@@ -264,6 +280,7 @@ PIDFile=/var/run/sniproxy.pid
 ExecStart=/usr/local/sbin/sniproxy -c /etc/sniproxy/sniproxy.conf
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -271,9 +288,23 @@ EOF
 
     systemctl daemon-reload
     systemctl enable sniproxy
-    systemctl start sniproxy
     
-    log_info "SNI Proxy 配置完成并已启动"
+    # 尝试启动服务并检查状态
+    if systemctl start sniproxy; then
+        log_info "SNI Proxy 配置完成并已启动"
+    else
+        log_error "SNI Proxy 启动失败，正在尝试诊断..."
+        # 显示详细错误信息
+        journalctl -u sniproxy --no-pager -n 10 2>/dev/null || true
+        # 尝试直接运行以获取错误
+        /usr/local/sbin/sniproxy -c /etc/sniproxy/sniproxy.conf -f 2>&1 &
+        sleep 2
+        if pgrep -x sniproxy > /dev/null; then
+            log_info "SNI Proxy 已通过备用方式启动"
+        else
+            log_warn "SNI Proxy 启动失败，请手动检查配置"
+        fi
+    fi
 }
 
 # 配置 Dnsmasq
