@@ -707,8 +707,8 @@ EOF
     fi
     
     # 更新 SNI Proxy 配置
-    if [ -f /etc/sniproxy/sniproxy.conf ]; then
-        sed -i "s/priority .*/priority $SNIPROXY_LOG_PRIORITY/" /etc/sniproxy/sniproxy.conf
+    if [ -f /etc/sniproxy.conf ]; then
+        sed -i "s/priority .*/priority $SNIPROXY_LOG_PRIORITY/" /etc/sniproxy.conf
         systemctl restart sniproxy 2>/dev/null || true
         log_info "SNI Proxy 日志等级已更新"
     fi
