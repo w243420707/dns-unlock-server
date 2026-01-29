@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.9.0"
+VERSION="2.0.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="扩充内置解锁列表：新增 TikTok、Claude、巴哈姆特、AbemaTV 等"
+CHANGELOG="全面支持流媒体测试脚本中的所有主流项目 (数十个平台全覆盖)"
 
 set -e
 
@@ -612,15 +612,32 @@ address=/bilibili.com/$PUBLIC_IP
 address=/bilivideo.com/$PUBLIC_IP
 address=/biliapi.net/$PUBLIC_IP
 
-# ============ 巴哈姆特 (动画疯) ============
-address=/gamer.com.tw/$PUBLIC_IP
-address=/bahamut.com.tw/$PUBLIC_IP
-address=/hinet.net/$PUBLIC_IP
+# ============ iQIYI (International) ============
+address=/iq.com/$PUBLIC_IP
+address=/iqiyi.com/$PUBLIC_IP
+address=/iqiyipic.com/$PUBLIC_IP
+
+# ============ TVB (Anywhere) ============
+address=/tvb.com/$PUBLIC_IP
+address=/tvboxnow.com/$PUBLIC_IP
+address=/tvbanywhere.com/$PUBLIC_IP
+address=/tvbanywhere.com.sg/$PUBLIC_IP
+address=/mytvsuper.com/$PUBLIC_IP
+
+# ============ Now TV / Now E ============
+address=/now.com/$PUBLIC_IP
+address=/nowe.com/$PUBLIC_IP
+address=/nowtv.com/$PUBLIC_IP
 
 # ============ Viu (HK) ============
 address=/viu.com/$PUBLIC_IP
 address=/viu.tv/$PUBLIC_IP
 address=/viu.now.com/$PUBLIC_IP
+
+# ============ 巴哈姆特 (动画疯) ============
+address=/gamer.com.tw/$PUBLIC_IP
+address=/bahamut.com.tw/$PUBLIC_IP
+address=/hinet.net/$PUBLIC_IP
 
 # ============ AbemaTV (JP) ============
 address=/abema.tv/$PUBLIC_IP
@@ -628,12 +645,44 @@ address=/abema.io/$PUBLIC_IP
 address=/ameba.jp/$PUBLIC_IP
 address=/hayabusa.io/$PUBLIC_IP
 
+# ============ DAZN ============
+address=/dazn.com/$PUBLIC_IP
+address=/dazn-api.com/$PUBLIC_IP
+address=/daznedge.net/$PUBLIC_IP
+
+# ============ BBC iPlayer ============
+address=/bbc.co.uk/$PUBLIC_IP
+address=/bbci.co.uk/$PUBLIC_IP
+
+# ============ ITV / Channel 4 / My5 ============
+address=/itv.com/$PUBLIC_IP
+address=/channel4.com/$PUBLIC_IP
+address=/my5.tv/$PUBLIC_IP
+
+# ============ Sky Go / Now TV (UK) ============
+address=/sky.com/$PUBLIC_IP
+address=/skygo.com/$PUBLIC_IP
+
+# ============ Discovery+ ============
+address=/discovery.com/$PUBLIC_IP
+address=/discoveryplus.com/$PUBLIC_IP
+
 # ============ Paramount+ / Peacock ============
 address=/paramountplus.com/$PUBLIC_IP
 address=/cbsvids.com/$PUBLIC_IP
-address=/cbsivideo.com/$PUBLIC_IP
 address=/pplusnative.com/$PUBLIC_IP
 address=/peacocktv.com/$PUBLIC_IP
+
+# ============ Hotstar / JioCinema ============
+address=/hotstar.com/$PUBLIC_IP
+address=/jiocinema.com/$PUBLIC_IP
+
+# ============ Starz / Showtime / AMC+ ============
+address=/starz.com/$PUBLIC_IP
+address=/sho.com/$PUBLIC_IP
+address=/showtime.com/$PUBLIC_IP
+address=/amc.com/$PUBLIC_IP
+address=/amcplus.com/$PUBLIC_IP
 
 # ============ OpenAI (ChatGPT) ============
 address=/chat.com/$PUBLIC_IP
@@ -655,9 +704,13 @@ address=/anthropic.com/::
 address=/claude.ai/$PUBLIC_IP
 address=/claude.ai/::
 
-# ============ Perplexity AI ============
+# ============ AI Extensions (Poe/Perplexity/Copilot) ============
+address=/poe.com/$PUBLIC_IP
+address=/poe.com/::
 address=/perplexity.ai/$PUBLIC_IP
 address=/perplexity.ai/::
+address=/bing.com/$PUBLIC_IP
+address=/bing.com/::
 
 # ============ Google Gemini ============
 address=/gemini.google.com/$PUBLIC_IP
