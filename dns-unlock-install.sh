@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="2.2.0"
+VERSION="2.2.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增后台自动学习守护进程，支持 5MB 日志限额自动轮替"
+CHANGELOG="在安装引导中增加后台自动学习模式的选择开关"
 
 set -e
 
@@ -1106,6 +1106,32 @@ learn_domains() {
     fi
 }
 
+# 询问是否开启后台自动学习
+prompt_auto_learn() {
+    echo ""
+    echo -e "${BLUE}是否开启后台自动学习守护进程?${NC}"
+    echo -e "  ${YELLOW}开启后，服务器每 10 分钟全自动捕捉并添加新域名，且日志限额 5MB。${NC}"
+    echo -e "  ${GREEN}1)${NC} 开启 (推荐：无人值守，自动进化)"
+    echo -e "  ${GREEN}2)${NC} 保持关闭"
+    echo ""
+    
+    if [ -t 0 ]; then
+        read -p "请输入选项 [1-2] (默认: 2): " al_choice
+    elif [ -e /dev/tty ]; then
+        read -p "请输入选项 [1-2] (默认: 2): " al_choice < /dev/tty
+    else
+        al_choice="2"
+    fi
+    
+    if [[ "$al_choice" == "1" ]]; then
+        WANT_AUTO_LEARN="true"
+        log_info "已选定：安装后开启后台自动学习"
+    else
+        WANT_AUTO_LEARN="false"
+        log_info "已选定：保持关闭"
+    fi
+}
+
 # 配置日志限额 (Logrotate)
 setup_log_limit() {
     log_info "正在配置 DNS 日志限额 (5MB)..."
@@ -1293,6 +1319,7 @@ main() {
     select_log_level
     select_proxy_engine
     select_unlock_scope
+    prompt_auto_learn
     stop_conflicting_services
     install_dependencies
     
@@ -1308,7 +1335,14 @@ main() {
     configure_firewall
     show_result
 
-    # 如果选择了学习模式，则在最后执行
+    # 处理后台自动学习
+    if [[ "$WANT_AUTO_LEARN" == "true" ]]; then
+        if ! systemctl is-active --quiet dns-unlock-harvester; then
+            toggle_auto_learn
+        fi
+    fi
+
+    # 如果选择了手动学习模式，则在最后执行
     if [[ "$RUN_LEARN_AFTER_INSTALL" == "true" ]]; then
         learn_domains
     fi
