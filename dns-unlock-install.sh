@@ -8,7 +8,7 @@
 # 版本信息
 VERSION="1.6.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增 GOST 模式 (支持 WARP SOCKS5)"
+CHANGELOG="新增 GOST 模式 (SOCKS5 前置代理支持)，解决 WARP 复杂网络路由问题"
 
 set -e
 
@@ -78,19 +78,10 @@ get_public_ip() {
     # 自动检测公网 IP
     DETECTED_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || curl -s https://icanhazip.com)
     
-    # 如果选择了 GOST 模式，尝试检测 SOCKS5 出口 IP
-    if [[ "$PROXY_MODE" == "gost" && -n "$SOCKS5_ADDR" ]]; then
-        log_info "正在通过 SOCKS5 代理检测出口 IP..."
-        SOCKS5_EXIT_IP=$(curl -s --socks5 "$SOCKS5_ADDR" https://api.ipify.org || echo "检测失败")
-        echo -e "${BLUE}SOCKS5 出口 IP: ${GREEN}${SOCKS5_EXIT_IP}${NC}"
-    fi
-    
     echo ""
-    echo -e "${BLUE}检测到的公网 IP (入口): ${GREEN}${DETECTED_IP}${NC}"
-    echo -e "${YELLOW}请确认此 IP 是你的服务器入口 IP（用于接收 DNS 请求）${NC}"
-    if [[ "$PROXY_MODE" == "gost" ]]; then
-         echo -e "${YELLOW}注意: 你已选择 GOST 模式，解锁流量将通过 SOCKS5 ($SOCKS5_EXIT_IP) 传出${NC}"
-    fi
+    echo -e "${BLUE}检测到的公网 IP: ${GREEN}${DETECTED_IP}${NC}"
+    echo -e "${YELLOW}注意: 如果你使用了 WARP 或其他出口代理，检测到的可能是出口 IP${NC}"
+    echo -e "${YELLOW}      你需要输入服务器的入口 IP（用于接收 DNS 请求）${NC}"
     echo ""
     
     # 让用户确认或输入正确的 IP
@@ -114,6 +105,22 @@ get_public_ip() {
     fi
     
     log_info "使用入口 IP: ${GREEN}$PUBLIC_IP${NC}"
+    
+    # 如果选择了 GOST 模式，尝试检测 SOCKS5 出口 IP
+    if [[ "$PROXY_MODE" == "gost" ]]; then
+        log_info "正在检测 SOCKS5 代理出口 IP..."
+        EXIT_IP=""
+        # 尝试使用 curl 通过 socks5 代理访问
+        if command -v curl &> /dev/null; then
+             EXIT_IP=$(curl -s --socks5-hostname "$GOST_SOCKS5_ADDR" https://api.ipify.org || echo "")
+        fi
+        
+        if [[ -n "$EXIT_IP" ]]; then
+             echo -e "${BLUE}SOCKS5 出口 IP: ${GREEN}${EXIT_IP}${NC} (这是你的实际解锁 IP)"
+        else
+             log_warn "无法通过 SOCKS5 获取出口 IP，请确认代理地址是否正确"
+        fi
+    fi
 }
 
 # 停止占用 53 端口的服务
@@ -312,6 +319,97 @@ SNICONF
     fi
 }
 
+# 安装 GOST
+install_gost() {
+    # 检查 GOST 是否已安装
+    if command -v gost &> /dev/null; then
+        log_info "GOST 已安装，跳过下载"
+        return
+    fi
+    
+    log_info "开始安装 GOST..."
+    
+    cd /tmp
+    rm -rf gost-linux-amd64*
+    
+    # 下载 GOST v2.11.5 (稳定版)
+    wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
+    
+    if [ ! -f gost-linux-amd64-2.11.5.gz ]; then
+        log_error "GOST 下载失败，请检查网络连接"
+        exit 1
+    fi
+    
+    gunzip gost-linux-amd64-2.11.5.gz
+    mv gost-linux-amd64-2.11.5 /usr/local/bin/gost
+    chmod +x /usr/local/bin/gost
+    
+    log_info "GOST 安装完成"
+}
+
+# 配置 GOST
+configure_gost() {
+    log_info "配置 GOST 服务..."
+    
+    # 检查端口 80 和 443 是否被占用
+    log_info "检查端口占用情况..."
+    for port in 80 443; do
+        if ss -tlnp 2>/dev/null | grep -q ":$port "; then
+            PROCESS=$(ss -tlnp 2>/dev/null | grep ":$port " | head -1)
+            log_warn "端口 $port 已被占用: $PROCESS"
+            # 如果是 sniproxy 占用了，停止它
+            if echo "$PROCESS" | grep -q "sniproxy"; then
+                log_info "停止冲突的 SNI Proxy..."
+                systemctl stop sniproxy 2>/dev/null || true
+                systemctl disable sniproxy 2>/dev/null || true
+            else
+                log_info "尝试停止占用端口的服务..."
+                systemctl stop nginx 2>/dev/null || true
+                systemctl stop apache2 2>/dev/null || true
+                systemctl stop httpd 2>/dev/null || true
+            fi
+            sleep 1
+        fi
+    done
+    
+    # 获取 SOCKS5 代理地址
+    if [ -z "$GOST_SOCKS5_ADDR" ]; then
+        GOST_SOCKS5_ADDR="127.0.0.1:40000"
+    fi
+    
+    log_info "使用 SOCKS5 代理: $GOST_SOCKS5_ADDR"
+    
+    # 创建 systemd 服务
+    cat > /etc/systemd/system/gost-unlock.service << EOF
+[Unit]
+Description=GOST Unlock Service (SNI over SOCKS5)
+After=network.target
+
+[Service]
+Type=simple
+# 监听 80/443，使用 sni 模式，全量转发给 SOCKS5
+ExecStart=/usr/local/bin/gost -L "sni://:80?bypass=127.0.0.1" -L "sni://:443?bypass=127.0.0.1" -F "socks5://$GOST_SOCKS5_ADDR"
+Restart=always
+User=root
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # 启动服务
+    systemctl daemon-reload
+    systemctl enable gost-unlock
+    systemctl restart gost-unlock
+    
+    if systemctl is-active --quiet gost-unlock; then
+        log_info "GOST 服务配置完成并已启动"
+    else
+        log_error "GOST 服务启动失败，请检查配置"
+        systemctl status gost-unlock --no-pager
+    fi
+}
+
 # 配置 Dnsmasq
 configure_dnsmasq() {
     log_info "配置 Dnsmasq..."
@@ -479,6 +577,49 @@ configure_firewall() {
     log_info "防火墙已持久化关闭，所有端口已放行"
 }
 
+# 选择代理模式
+select_proxy_mode() {
+    echo ""
+    echo -e "${BLUE}请选择代理服务模式:${NC}"
+    echo -e "  ${GREEN}1)${NC} SNI Proxy (默认) - 传统模式，适用于原生解锁或透明代理"
+    echo -e "  ${GREEN}2)${NC} GOST + SOCKS5 (推荐) - 适用于 WARP/Clash 等 SOCKS5 前置代理场景"
+    echo ""
+    
+    if [ -t 0 ]; then
+        read -p "请输入选项 [1-2] (默认: 1): " choice
+    elif [ -e /dev/tty ]; then
+        read -p "请输入选项 [1-2] (默认: 1): " choice < /dev/tty
+    else
+        choice="1"
+    fi
+    
+    case "$choice" in
+        2)
+            PROXY_MODE="gost"
+            log_info "已选择模式: GOST + SOCKS5"
+            echo ""
+            if [ -t 0 ]; then
+                read -p "请输入 SOCKS5 代理地址 [默认: 127.0.0.1:40000]: " user_addr
+            elif [ -e /dev/tty ]; then
+                read -p "请输入 SOCKS5 代理地址 [默认: 127.0.0.1:40000]: " user_addr < /dev/tty
+            else
+                user_addr=""
+            fi
+            
+            if [[ -n "$user_addr" ]]; then
+                GOST_SOCKS5_ADDR="$user_addr"
+            else
+                GOST_SOCKS5_ADDR="127.0.0.1:40000"
+            fi
+            log_info "SOCKS5 地址: $GOST_SOCKS5_ADDR"
+            ;;
+        *)
+            PROXY_MODE="sniproxy"
+            log_info "已选择模式: SNI Proxy"
+            ;;
+    esac
+}
+
 # 显示安装结果
 show_result() {
     echo ""
@@ -492,10 +633,9 @@ show_result() {
     echo -e "  - Dnsmasq:   $(systemctl is-active dnsmasq)"
     if [[ "$PROXY_MODE" == "gost" ]]; then
         echo -e "  - GOST:      $(systemctl is-active gost-unlock)"
-        echo -e "  - SNI Proxy: [已禁用]"
+        echo -e "  - SOCKS5:    $GOST_SOCKS5_ADDR"
     else
         echo -e "  - SNI Proxy: $(systemctl is-active sniproxy)"
-        echo -e "  - GOST:      [已禁用]"
     fi
     echo -e "  - 日志等级:  ${BLUE}$LOG_LEVEL${NC}"
     echo ""
@@ -505,11 +645,19 @@ show_result() {
     echo -e "配置文件位置:"
     echo -e "  - Dnsmasq 主配置: /etc/dnsmasq.conf"
     echo -e "  - 解锁规则: /etc/dnsmasq.d/unlock.conf"
-    echo -e "  - SNI Proxy 配置: /etc/sniproxy/sniproxy.conf"
+    if [[ "$PROXY_MODE" == "gost" ]]; then
+        echo -e "  - GOST 服务文件: /etc/systemd/system/gost-unlock.service"
+    else
+        echo -e "  - SNI Proxy 配置: /etc/sniproxy.conf"
+    fi
     echo ""
     echo -e "${YELLOW}管理命令:${NC}"
     echo -e "  重启 Dnsmasq:   systemctl restart dnsmasq"
-    echo -e "  重启 SNI Proxy: systemctl restart sniproxy"
+    if [[ "$PROXY_MODE" == "gost" ]]; then
+        echo -e "  重启 GOST:      systemctl restart gost-unlock"
+    else
+        echo -e "  重启 SNI Proxy: systemctl restart sniproxy"
+    fi
     echo -e "  查看 DNS 日志:  tail -f /var/log/dnsmasq.log"
     echo ""
 }
@@ -609,125 +757,26 @@ EOF
     log_info "日志等级调整完成: $LOG_LEVEL"
 }
 
+
 # 显示服务状态
 show_status() {
     echo ""
     echo -e "${BLUE}============================================${NC}"
-    echo -e "${BLUE}      DNS 解锁服务器状态${NC}"
+    echo -e "       DNS Unlock Server 状态 (v$VERSION)"
     echo -e "${BLUE}============================================${NC}"
-    echo ""
-    echo -e "Dnsmasq 状态:   $(systemctl is-active dnsmasq 2>/dev/null || echo '未安装')"
-    echo -e "SNI Proxy 状态: $(systemctl is-active sniproxy 2>/dev/null || echo '未安装')"
-    echo ""
     
-    if [ -f /etc/dnsmasq.conf ]; then
-        CURRENT_LEVEL=$(grep "# 日志等级:" /etc/dnsmasq.conf 2>/dev/null | cut -d: -f2 | tr -d ' ')
-        echo -e "当前日志等级: ${GREEN}${CURRENT_LEVEL:-未知}${NC}"
-    fi
-    echo ""
-}
-
-# 选择代理模式
-select_proxy_mode() {
-    echo ""
-    echo -e "${BLUE}请选择代理模式:${NC}"
-    echo -e "  ${GREEN}1)${NC} SNI Proxy (默认) - 传统模式，适合原生 IP 解锁或无复杂网络环境"
-    echo -e "  ${GREEN}2)${NC} GOST + WARP (SOCKS5) - 推荐，适合通过 WARP SOCKS5 代理出口解锁"
-    echo ""
+    echo -e "DNS (Dnsmasq):   $(systemctl is-active dnsmasq)"
     
-    if [ -t 0 ]; then
-        read -p "请输入选项 [1-2] (默认: 1): " mode_choice
-    elif [ -e /dev/tty ]; then
-        read -p "请输入选项 [1-2] (默认: 1): " mode_choice < /dev/tty
+    if [ -f /etc/systemd/system/gost-unlock.service ]; then
+        echo -e "Proxy (GOST):    $(systemctl is-active gost-unlock)"
+        if systemctl is-active --quiet gost-unlock; then
+            echo -e "  - 模式: GOST + SOCKS5"
+        fi
     else
-        mode_choice="1"
+        echo -e "Proxy (SNIProxy): $(systemctl is-active sniproxy)"
     fi
     
-    case "$mode_choice" in
-        2)
-            PROXY_MODE="gost"
-            log_info "已选择代理模式: GOST + SOCKS5"
-            if [ -t 0 ]; then
-                read -p "请输入 SOCKS5 代理地址 (默认: 127.0.0.1:40000): " SOCKS5_ADDR
-            elif [ -e /dev/tty ]; then
-                read -p "请输入 SOCKS5 代理地址 (默认: 127.0.0.1:40000): " SOCKS5_ADDR < /dev/tty
-            else
-                SOCKS5_ADDR=""
-            fi
-            
-            if [[ -z "$SOCKS5_ADDR" ]]; then
-                SOCKS5_ADDR="127.0.0.1:40000"
-            fi
-            log_info "SOCKS5 代理地址: $SOCKS5_ADDR"
-            ;;
-        *)
-            PROXY_MODE="sniproxy"
-            log_info "已选择代理模式: SNI Proxy"
-            ;;
-    esac
-}
-
-# 安装 GOST
-install_gost() {
-    if command -v gost &> /dev/null; then
-        log_info "GOST 已安装，跳过下载"
-        return
-    fi
-    
-    log_info "开始安装 GOST..."
-    cd /tmp
-    rm -f gost-linux-amd64*
-    # 下载 GOST v2.11.5
-    wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-    gunzip gost-linux-amd64-2.11.5.gz
-    mv gost-linux-amd64-2.11.5 /usr/local/bin/gost
-    chmod +x /usr/local/bin/gost
-    
-    log_info "GOST 安装完成"
-}
-
-# 配置 GOST
-configure_gost() {
-    log_info "配置 GOST 服务..."
-    
-    # 停止 SNI Proxy (如果存在)
-    systemctl stop sniproxy 2>/dev/null || true
-    systemctl disable sniproxy 2>/dev/null || true
-    
-    # 创建 systemd 服务
-    cat > /etc/systemd/system/gost-unlock.service << EOF
-[Unit]
-Description=GOST Unlock Service (SNI over SOCKS5)
-After=network.target
-
-[Service]
-Type=simple
-# 监听 80/443，使用 sni 模式，全量转发给 SOCKS5
-ExecStart=/usr/local/bin/gost -L "sni://:80?bypass=127.0.0.1" -L "sni://:443?bypass=127.0.0.1" -F "socks5://$SOCKS5_ADDR"
-Restart=always
-User=root
-LimitNOFILE=65535
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    systemctl daemon-reload
-    systemctl enable gost-unlock
-    systemctl restart gost-unlock
-    
-    log_info "GOST 服务配置完成并已启动"
-}
-
-# 卸载或停止冲突的代理服务
-cleanup_proxy_services() {
-    if [[ "$PROXY_MODE" == "gost" ]]; then
-        systemctl stop sniproxy 2>/dev/null || true
-        systemctl disable sniproxy 2>/dev/null || true
-    else
-        systemctl stop gost-unlock 2>/dev/null || true
-        systemctl disable gost-unlock 2>/dev/null || true
-    fi
+    echo ""
 }
 
 # 主函数
@@ -767,14 +816,19 @@ main() {
     echo ""
     
     check_root
-    select_proxy_mode  # 新增：选择代理模式
+    
+    # 1. 选择模式
+    select_proxy_mode
+    
+    # 2. 获取 IP (可能包含 GOST 出口检测)
     get_public_ip
+    
+    # 3. 选择日志
     select_log_level
+    
     stop_conflicting_services
     install_dependencies
     
-    # 根据选择安装不同的代理
-    cleanup_proxy_services
     if [[ "$PROXY_MODE" == "gost" ]]; then
         install_gost
         configure_gost
