@@ -9,6 +9,7 @@
 - 🔧 基于 Dnsmasq + SNI Proxy 架构
 - 📝 可选日志等级（DEBUG / INFO / WARN）
 - 🛡️ 自动禁用并持久化关闭系统防火墙 (UFW/Firewalld/Iptables)
+- 🚀 支持多种代理引擎: SNI Proxy 或 GOST (专为 WARP 优化)
 
 ## 系统要求
 
@@ -89,7 +90,7 @@ tail -f /var/log/dnsmasq.log
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
-| v1.6.0 | 2026-01-29 | 新增 GOST 模式，完美支持 WARP SOCKS5 代理 |
+| v1.6.0 | 2026-01-29 | 支持 GOST 代理引擎，优化对 WARP SOCKS5 的兼容性 |
 | v1.5.3 | 2026-01-29 | 阻断解锁域名的 IPv6 AAAA 记录，防止 IPv6 泄露 |
 | v1.5.2 | 2026-01-29 | 强制 SNI Proxy 使用外部 DNS，修复路由死循环 |
 | v1.5.1 | 2026-01-29 | 支持手动指定入口 IP，解决 WARP 场景解析错误 |
