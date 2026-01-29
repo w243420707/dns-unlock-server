@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.8.1"
+VERSION="1.9.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="回归域名关键词模式为默认，增加自定义域名追加功能"
+CHANGELOG="扩充内置解锁列表：新增 TikTok、Claude、巴哈姆特、AbemaTV 等"
 
 set -e
 
@@ -592,6 +592,16 @@ address=/googlevideo.com/$PUBLIC_IP
 address=/ytimg.com/$PUBLIC_IP
 address=/youtube-nocookie.com/$PUBLIC_IP
 
+# ============ TikTok (International) ============
+address=/tiktok.com/$PUBLIC_IP
+address=/tiktokv.com/$PUBLIC_IP
+address=/tiktokcdn.com/$PUBLIC_IP
+address=/byteoversea.com/$PUBLIC_IP
+address=/ibyteimg.com/$PUBLIC_IP
+address=/ipstatp.com/$PUBLIC_IP
+address=/muscdn.com/$PUBLIC_IP
+address=/musical.ly/$PUBLIC_IP
+
 # ============ Spotify ============
 address=/spotify.com/$PUBLIC_IP
 address=/scdn.co/$PUBLIC_IP
@@ -601,6 +611,29 @@ address=/spotifycdn.com/$PUBLIC_IP
 address=/bilibili.com/$PUBLIC_IP
 address=/bilivideo.com/$PUBLIC_IP
 address=/biliapi.net/$PUBLIC_IP
+
+# ============ 巴哈姆特 (动画疯) ============
+address=/gamer.com.tw/$PUBLIC_IP
+address=/bahamut.com.tw/$PUBLIC_IP
+address=/hinet.net/$PUBLIC_IP
+
+# ============ Viu (HK) ============
+address=/viu.com/$PUBLIC_IP
+address=/viu.tv/$PUBLIC_IP
+address=/viu.now.com/$PUBLIC_IP
+
+# ============ AbemaTV (JP) ============
+address=/abema.tv/$PUBLIC_IP
+address=/abema.io/$PUBLIC_IP
+address=/ameba.jp/$PUBLIC_IP
+address=/hayabusa.io/$PUBLIC_IP
+
+# ============ Paramount+ / Peacock ============
+address=/paramountplus.com/$PUBLIC_IP
+address=/cbsvids.com/$PUBLIC_IP
+address=/cbsivideo.com/$PUBLIC_IP
+address=/pplusnative.com/$PUBLIC_IP
+address=/peacocktv.com/$PUBLIC_IP
 
 # ============ OpenAI (ChatGPT) ============
 address=/chat.com/$PUBLIC_IP
@@ -615,6 +648,16 @@ address=/openai.com/$PUBLIC_IP
 address=/openai.com/::
 address=/sora.com/$PUBLIC_IP
 address=/sora.com/::
+
+# ============ Claude AI (Anthropic) ============
+address=/anthropic.com/$PUBLIC_IP
+address=/anthropic.com/::
+address=/claude.ai/$PUBLIC_IP
+address=/claude.ai/::
+
+# ============ Perplexity AI ============
+address=/perplexity.ai/$PUBLIC_IP
+address=/perplexity.ai/::
 
 # ============ Google Gemini ============
 address=/gemini.google.com/$PUBLIC_IP

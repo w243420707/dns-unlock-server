@@ -42,7 +42,12 @@ wget -O dns-unlock-install.sh https://raw.githubusercontent.com/w243420707/dns-u
 | YouTube Premium | youtube.com |
 | Spotify | spotify.com |
 | Bilibili (港澳台) | bilibili.com |
-| Google Gemini | gemini.google.com, generativelanguage.googleapis.com 等 |
+| 巴哈姆特 (动画疯) | gamer.com.tw, bahamut.com.tw |
+| TikTok | tiktok.com, byteoversea.com |
+| Google Gemini | gemini.google.com |
+| OpenAI / Sora | openai.com, chatgpt.com, sora.com |
+| Claude / Perplexity | anthropic.com, claude.ai, perplexity.ai |
+| Viu / AbemaTV | viu.tv, abema.tv |
 
 ## 使用方法
 
@@ -95,6 +100,7 @@ tail -f /var/log/dnsmasq.log
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
+| v1.9.0 | 2026-01-29 | 默认解锁列表扩容：新增 TikTok、Claude、巴哈姆特等 |
 | v1.8.1 | 2026-01-29 | 回归域名关键词模式为默认，支持自定义域名追加 |
 | v1.8.0 | 2026-01-29 | Geosite 默认支持全量非中国域名 (geolocation-!cn)，性能大幅优化 |
 | v1.7.0 | 2026-01-29 | 支持 Geosite 动态域名分类解锁，新增 --update-domains 命令 |
