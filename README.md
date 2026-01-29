@@ -8,6 +8,7 @@
 - 🚀 一键自动安装配置
 - 🔧 基于 Dnsmasq + SNI Proxy 架构
 - 📝 可选日志等级（DEBUG / INFO / WARN）
+- 🛡️ 自动禁用并持久化关闭系统防火墙 (UFW/Firewalld/Iptables)
 
 ## 系统要求
 

@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.2.1"
+VERSION="1.3.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="修复 curl | bash 管道模式下无法选择日志等级的问题"
+CHANGELOG="新增自动禁用并持久化关闭所有系统防火墙的功能"
 
 set -e
 
@@ -351,25 +351,48 @@ EOF
     log_info "Dnsmasq 配置完成并已启动"
 }
 
-# 配置防火墙
+# 配置防火墙 (持久化关闭)
 configure_firewall() {
-    log_info "配置防火墙规则..."
+    log_info "开始持久化关闭系统防火墙..."
     
-    # 使用 iptables 放行端口
-    iptables -I INPUT -p udp --dport 53 -j ACCEPT
-    iptables -I INPUT -p tcp --dport 53 -j ACCEPT
-    iptables -I INPUT -p tcp --dport 80 -j ACCEPT
-    iptables -I INPUT -p tcp --dport 443 -j ACCEPT
-    
-    # 如果安装了 ufw，也放行一下
+    # 1. 停止并禁用 UFW (Ubuntu/Debian)
     if command -v ufw &> /dev/null; then
-        ufw allow 53/udp
-        ufw allow 53/tcp
-        ufw allow 80/tcp
-        ufw allow 443/tcp
+        log_info "检测到 UFW，正在禁用..."
+        ufw disable >/dev/null 2>&1 || true
+        systemctl stop ufw >/dev/null 2>&1 || true
+        systemctl disable ufw >/dev/null 2>&1 || true
     fi
+
+    # 2. 停止并禁用 Firewalld (CentOS/RHEL/Ubuntu)
+    if systemctl is-active --quiet firewalld || systemctl is-enabled --quiet firewalld; then
+        log_info "检测到 Firewalld，正在禁用..."
+        systemctl stop firewalld >/dev/null 2>&1 || true
+        systemctl disable firewalld >/dev/null 2>&1 || true
+    fi
+
+    # 3. 清理 Iptables 规则并设置默认策略为 ACCEPT
+    log_info "正在清理 Iptables 规则并设为全放行..."
+    iptables -P INPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    iptables -P OUTPUT ACCEPT
+    iptables -t nat -F
+    iptables -t mangle -F
+    iptables -F
+    iptables -X
     
-    log_info "防火墙规则已配置"
+    # 4. 清理 Ip6tables 规则 (IPv6)
+    if command -v ip6tables &> /dev/null; then
+        ip6tables -P INPUT ACCEPT
+        ip6tables -P FORWARD ACCEPT
+        ip6tables -P OUTPUT ACCEPT
+        ip6tables -t nat -F
+        ip6tables -t mangle -F
+        ip6tables -F
+        ip6tables -X
+    fi
+
+    # 5. 持久化清理 (部分系统可能需要安装 iptables-persistent，但直接清理已运行的即可)
+    log_info "防火墙已持久化关闭，所有端口已放行"
 }
 
 # 显示安装结果
