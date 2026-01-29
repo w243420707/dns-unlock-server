@@ -7,7 +7,7 @@
 - 🎬 支持多种流媒体平台解锁（Netflix、Disney+、HBO Max、Hulu、YouTube Premium 等）
 - 🚀 一键自动安装配置
 - 🔧 基于 Dnsmasq + SNI Proxy 架构
-- 📝 详细的日志记录
+- 📝 可选日志等级（DEBUG / INFO / WARN）
 
 ## 系统要求
 
@@ -45,6 +45,16 @@ sudo bash dns-unlock-install.sh
 ## 使用方法
 
 安装完成后，在你的代理节点上将 DNS 服务器设置为本服务器的公网 IP。
+
+## 日志等级
+
+安装时可以选择日志记录等级：
+
+| 等级 | 说明 | 适用场景 |
+|------|------|----------|
+| DEBUG | 记录所有 DNS 查询 + DHCP 信息 | 调试问题 |
+| INFO | 记录所有 DNS 查询（默认） | 日常使用 |
+| WARN | 仅记录警告和错误 | 生产环境 |
 
 ## 配置文件位置
 
