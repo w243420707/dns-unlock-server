@@ -6,16 +6,17 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.6.1"
+VERSION="1.7.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增对 Google Gemini AI 的解锁支持"
+CHANGELOG="支持 Geosite 动态域名分类解锁，新增 update-domains 命令"
 
 set -e
 
 # 默认设置
 LOG_LEVEL="info"
-PROXY_ENGINE="sniproxy" # 默认为 sniproxy
-WARP_SOCKS="127.0.0.1:40000" # 默认 WARP SOCKS5 地址
+PROXY_ENGINE="sniproxy" 
+WARP_SOCKS="127.0.0.1:40000"
+GEOSITE_CATEGORIES="netflix,disney,hbo,hulu,amazon,youtube,spotify,openai,gemini" # 默认 Geosite 分类
 
 # 颜色定义
 RED='\033[0;31m'
@@ -115,38 +116,80 @@ check_root() {
     fi
 }
 
-# 获取服务器公网 IP
-get_public_ip() {
-    # 自动检测公网 IP
-    DETECTED_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || curl -s https://icanhazip.com)
-    
-    echo ""
-    echo -e "${BLUE}检测到的公网 IP: ${GREEN}${DETECTED_IP}${NC}"
-    echo -e "${YELLOW}注意: 如果你使用了 WARP 或其他出口代理，检测到的可能是出口 IP${NC}"
-    echo -e "${YELLOW}      你需要输入服务器的入口 IP（用于接收 DNS 请求）${NC}"
-    echo ""
-    
-    # 让用户确认或输入正确的 IP
-    if [ -t 0 ]; then
-        read -p "请输入服务器入口 IP [直接回车使用 $DETECTED_IP]: " USER_IP
-    elif [ -e /dev/tty ]; then
-        read -p "请输入服务器入口 IP [直接回车使用 $DETECTED_IP]: " USER_IP < /dev/tty
-    else
-        USER_IP=""
-    fi
-    
-    if [[ -n "$USER_IP" ]]; then
-        PUBLIC_IP="$USER_IP"
-    else
-        PUBLIC_IP="$DETECTED_IP"
-    fi
-    
-    if [[ -z "$PUBLIC_IP" ]]; then
-        log_error "无法获取公网 IP，请检查网络连接"
-        exit 1
-    fi
-    
     log_info "使用入口 IP: ${GREEN}$PUBLIC_IP${NC}"
+}
+
+# 从 Geosite 下载并生成规则
+fetch_geosite_category() {
+    local category=$1
+    local output_file=$2
+    local source_url="https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/${category}"
+    
+    log_info "正在从 Geosite 获取分类: ${YELLOW}${category}${NC} ..."
+    
+    local tmp_data=$(curl -s "$source_url")
+    if [[ -z "$tmp_data" || "$tmp_data" == "404: Not Found" ]]; then
+        log_warn "分类 ${category} 未找到或内容为空，跳过"
+        return
+    fi
+    
+    # 解析域名:
+    # 1. 提取普通行 (不以 # 开头，不包含 :)
+    # 2. 提取 full: 开头的域名
+    # 3. 排除空行
+    echo "$tmp_data" | grep -v '^#' | grep -v '^$' | while read -r line; do
+        local domain=""
+        if [[ "$line" =~ ^full: ]]; then
+            domain="${line#full:}"
+        elif [[ ! "$line" =~ : ]]; then
+            domain="$line"
+        fi
+        
+        if [[ -n "$domain" ]]; then
+            # 写入 IPv4 劫持和 IPv6 阻断
+            echo "address=/${domain}/$PUBLIC_IP" >> "$output_file"
+            echo "address=/${domain}/::" >> "$output_file"
+        fi
+    done
+}
+
+# 选择解锁范围
+select_unlock_scope() {
+    echo ""
+    echo -e "${BLUE}请选择解锁域名范围:${NC}"
+    echo -e "  ${GREEN}1)${NC} 基础列表 (内置常用流媒体 + Gemini)"
+    echo -e "  ${GREEN}2)${NC} Geosite 列表 (动态下载，支持更多 AI 和流媒体)"
+    echo ""
+    
+    if [ -t 0 ]; then
+        read -p "请输入选项 [1-2] (默认: 1): " scope_choice
+    elif [ -e /dev/tty ]; then
+        read -p "请输入选项 [1-2] (默认: 1): " scope_choice < /dev/tty
+    else
+        scope_choice="1"
+    fi
+    
+    if [[ "$scope_choice" == "2" ]]; then
+        UNLOCK_MODE="geosite"
+        echo ""
+        echo -e "${YELLOW}请输入要解锁的 Geosite 分类（逗号分隔）${NC}"
+        echo -e "参考: netflix,openai,disney,google,telegram,twitter,tiktok"
+        if [ -t 0 ]; then
+            read -p "分类列表 [默认: $GEOSITE_CATEGORIES]: " user_categories
+        elif [ -e /dev/tty ]; then
+            read -p "分类列表 [默认: $GEOSITE_CATEGORIES]: " user_categories < /dev/tty
+        else
+            user_categories=""
+        fi
+        
+        if [[ -n "$user_categories" ]]; then
+            GEOSITE_CATEGORIES="$user_categories"
+        fi
+        log_info "已选择 Geosite 模式，分类: ${GREEN}$GEOSITE_CATEGORIES${NC}"
+    else
+        UNLOCK_MODE="basic"
+        log_info "已选择基础列表模式"
+    fi
 }
 
 # 停止占用 53 端口的服务
@@ -466,8 +509,35 @@ EOF
     # 创建流媒体解锁规则目录
     mkdir -p /etc/dnsmasq.d
     
-    # 写入流媒体域名解析规则（指向本机 IP）
-    cat > /etc/dnsmasq.d/unlock.conf << EOF
+    # 写入流媒体域名解析规则
+    if [[ "$UNLOCK_MODE" == "geosite" ]]; then
+        log_info "开始从 Geosite 动态生成规则..."
+        echo "# ============ Geosite 解锁规则 ($GEOSITE_CATEGORIES) ============" > /etc/dnsmasq.d/unlock.conf
+        IFS=',' read -ra ADDR <<< "$GEOSITE_CATEGORIES"
+        for cat in "${ADDR[@]}"; do
+            fetch_geosite_category "$cat" "/etc/dnsmasq.d/unlock.conf"
+        done
+        
+        # 补齐 IP 检测网站
+        cat >> /etc/dnsmasq.d/unlock.conf << EOF
+
+# ============ IP 检测网站 ============
+address=/ip.sb/$PUBLIC_IP
+address=/ip.sb/::
+address=/ip.gs/$PUBLIC_IP
+address=/ip.gs/::
+address=/ip.me/$PUBLIC_IP
+address=/ip.me/::
+address=/ipinfo.io/$PUBLIC_IP
+address=/ipinfo.io/::
+address=/fast.com/$PUBLIC_IP
+address=/fast.com/::
+address=/speedtest.net/$PUBLIC_IP
+address=/speedtest.net/::
+EOF
+    else
+        # 基础列表模式
+        cat > /etc/dnsmasq.d/unlock.conf << EOF
 # ============ Netflix ============
 address=/netflix.com/$PUBLIC_IP
 address=/netflix.net/$PUBLIC_IP
@@ -548,6 +618,7 @@ address=/fast.com/::
 address=/speedtest.net/$PUBLIC_IP
 address=/speedtest.net/::
 EOF
+    fi
 
     # 重启 Dnsmasq
     systemctl restart dnsmasq
@@ -646,8 +717,9 @@ show_help() {
     echo ""
     echo "选项:"
     echo "  --help, -h          显示此帮助信息"
-    echo "  --log-level LEVEL   调整日志等级 (debug/info/warn)"
     echo "  --status            显示当前服务状态"
+    echo "  --update-domains    更新 Geosite 解锁域名列表"
+    echo "  --log-level LEVEL   调整日志等级 (debug/info/warn)"
     echo ""
     echo "示例:"
     echo "  $0                  运行完整安装"
@@ -732,6 +804,33 @@ EOF
     log_info "日志等级调整完成: $LOG_LEVEL"
 }
 
+# 更新域名规则
+update_domains() {
+    log_info "正在更新解锁域名规则..."
+    
+    # 获取入口 IP
+    if [ -f /etc/dnsmasq.d/unlock.conf ]; then
+        PUBLIC_IP=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" /etc/dnsmasq.d/unlock.conf | head -1)
+    fi
+    
+    if [[ -z "$PUBLIC_IP" ]]; then
+        PUBLIC_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || echo "127.0.0.1")
+    fi
+    
+    # 重新确定模式
+    if grep -q "Geosite 解锁规则" /etc/dnsmasq.d/unlock.conf 2>/dev/null; then
+        UNLOCK_MODE="geosite"
+        # 尝试提取之前的分类
+        GEOSITE_CATEGORIES=$(grep -oP "\(.*?\)" /etc/dnsmasq.d/unlock.conf | head -1 | tr -d '()')
+    else
+        UNLOCK_MODE="basic"
+    fi
+    
+    log_info "当前模式: $UNLOCK_MODE, 入口 IP: $PUBLIC_IP"
+    configure_dnsmasq
+    log_info "域名规则已更新并重启服务"
+}
+
 # 显示服务状态
 show_status() {
     echo ""
@@ -774,6 +873,11 @@ main() {
                 show_status
                 exit 0
                 ;;
+            --update-domains)
+                check_root
+                update_domains
+                exit 0
+                ;;
             *)
                 log_error "未知参数: $1"
                 show_help
@@ -796,6 +900,7 @@ main() {
     get_public_ip
     select_log_level
     select_proxy_engine
+    select_unlock_scope
     stop_conflicting_services
     install_dependencies
     

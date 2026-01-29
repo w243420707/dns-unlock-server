@@ -10,6 +10,7 @@
 - 📝 可选日志等级（DEBUG / INFO / WARN）
 - 🛡️ 自动禁用并持久化关闭系统防火墙 (UFW/Firewalld/Iptables)
 - 🚀 支持多种代理引擎: SNI Proxy 或 GOST (专为 WARP 优化)
+- 🌍 支持 Geosite 动态域名分流: 支持一键解锁 `openai`、`netflix`、`telegram` 等分类域名
 
 ## 系统要求
 
@@ -76,6 +77,9 @@ systemctl restart sniproxy
 
 # 查看 DNS 日志
 tail -f /var/log/dnsmasq.log
+
+# 更新解锁域名列表（特别是 Geosite 模式）
+./dns-unlock-install.sh --update-domains
 ```
 
 ## 开放端口
@@ -91,6 +95,7 @@ tail -f /var/log/dnsmasq.log
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
+| v1.7.0 | 2026-01-29 | 支持 Geosite 动态域名分类解锁，新增 --update-domains 命令 |
 | v1.6.1 | 2026-01-29 | 新增对 Google Gemini AI 的解锁支持 |
 | v1.6.0 | 2026-01-29 | 支持 GOST 代理引擎，优化对 WARP SOCKS5 的兼容性 |
 | v1.5.3 | 2026-01-29 | 阻断解锁域名的 IPv6 AAAA 记录，防止 IPv6 泄露 |
