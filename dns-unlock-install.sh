@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.3.0"
+VERSION="1.3.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增自动禁用并持久化关闭所有系统防火墙的功能"
+CHANGELOG="修复 autoconf 版本过低导致 SNI Proxy 编译失败的问题"
 
 set -e
 
@@ -159,12 +159,41 @@ install_sniproxy() {
     
     log_info "开始安装 SNI Proxy..."
     
+    # 检查并安装编译 sniproxy 所需的额外依赖
+    log_info "检查编译依赖..."
+    
+    # 安装 devscripts (包含 debchange) 如果缺失
+    if ! command -v debchange &> /dev/null; then
+        log_info "安装 devscripts (debchange)..."
+        apt-get install -y devscripts >/dev/null 2>&1 || true
+    fi
+    
+    # 检查 autoconf 版本，如果低于 2.71 则升级
+    AUTOCONF_VERSION=$(autoconf --version 2>/dev/null | head -n1 | grep -oP '\d+\.\d+' | head -1)
+    if [ -n "$AUTOCONF_VERSION" ]; then
+        MAJOR=$(echo "$AUTOCONF_VERSION" | cut -d. -f1)
+        MINOR=$(echo "$AUTOCONF_VERSION" | cut -d. -f2)
+        if [ "$MAJOR" -lt 2 ] || { [ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 71 ]; }; then
+            log_warn "autoconf 版本 ($AUTOCONF_VERSION) 过低，需要 2.71+，正在从源码安装..."
+            cd /tmp
+            rm -rf autoconf-2.71*
+            wget -q https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz
+            tar -xzf autoconf-2.71.tar.gz
+            cd autoconf-2.71
+            ./configure --prefix=/usr >/dev/null 2>&1
+            make >/dev/null 2>&1
+            make install >/dev/null 2>&1
+            log_info "autoconf 2.71 安装完成"
+        fi
+    fi
+    
     cd /tmp
     rm -rf sniproxy
     git clone https://github.com/dlundquist/sniproxy.git
     cd sniproxy
     
-    ./autogen.sh
+    # 运行 autogen，忽略 debchange 警告
+    ./autogen.sh 2>/dev/null || true
     ./configure
     make
     make install
