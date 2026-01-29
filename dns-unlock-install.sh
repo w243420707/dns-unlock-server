@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="2.1.2"
+VERSION="2.2.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="修复学习模式下 Dnsmasq 日志权限导致的启动失败问题"
+CHANGELOG="新增后台自动学习守护进程，支持 5MB 日志限额自动轮替"
 
 set -e
 
@@ -891,7 +891,8 @@ show_help() {
     echo "选项:"
     echo "  --help, -h          显示此帮助信息"
     echo "  --status            显示当前服务状态"
-    echo "  --learn             进入智能学习模式，自动捕捉新域名"
+    echo "  --learn             【手动】进入学习模式，互动捕捉域名"
+    echo "  --auto-learn        【后台】开启/关闭后台自动捕捉守护进程"
     echo "  --update-domains    更新 Geosite 解锁域名列表"
     echo "  --log-level LEVEL   调整日志等级 (debug/info/warn)"
     echo ""
@@ -1097,10 +1098,110 @@ learn_domains() {
         log_info "解锁列表已更新并生效！"
     fi
 
-    # 学习结束，关闭日志以节省性能
-    log_info "正在关闭临时日志监控..."
-    sed -i '/log-queries/d' /etc/dnsmasq.conf
-    systemctl restart dnsmasq
+    # 学习结束，关闭日志以节省性能（除非开启了后台模式）
+    if ! systemctl is-active --quiet dns-unlock-harvester; then
+        log_info "正在关闭临时日志监控..."
+        sed -i '/log-queries/d' /etc/dnsmasq.conf
+        systemctl restart dnsmasq
+    fi
+}
+
+# 配置日志限额 (Logrotate)
+setup_log_limit() {
+    log_info "正在配置 DNS 日志限额 (5MB)..."
+    cat > /etc/logrotate.d/dnsmasq << EOF
+/var/log/dnsmasq.log {
+    size 5M
+    rotate 1
+    missingok
+    notifempty
+    compress
+    delaycompress
+    postrotate
+        /usr/lib/dnsmasq/dnsmasq-hq || killall -HUP dnsmasq
+    endscript
+}
+EOF
+    log_info "日志限额配置完成。"
+}
+
+# 后台自动学习扫描器
+toggle_auto_learn() {
+    if systemctl is-active --quiet dns-unlock-harvester; then
+        log_info "正在关闭后台自动学习模式..."
+        systemctl stop dns-unlock-harvester
+        systemctl disable dns-unlock-harvester
+        rm -f /etc/systemd/system/dns-unlock-harvester.service
+        systemctl daemon-reload
+        # 同时关闭 dnsmasq 查询日志
+        sed -i '/log-queries/d' /etc/dnsmasq.conf
+        systemctl restart dnsmasq
+        log_info "后台模式已关闭。"
+    else
+        log_info "正在开启后台自动学习模式..."
+        
+        # 1. 确保日志环境就绪
+        setup_log_limit
+        touch /var/log/dnsmasq.log
+        chmod 664 /var/log/dnsmasq.log
+        chown dnsmasq:nogroup /var/log/dnsmasq.log 2>/dev/null || chown nobody:nogroup /var/log/dnsmasq.log 2>/dev/null || true
+        
+        # 2. 开启 dnsmasq 查询日志
+        if ! grep -q "^log-queries" /etc/dnsmasq.conf; then
+            echo "log-queries" >> /etc/dnsmasq.conf
+            echo "log-facility=/var/log/dnsmasq.log" >> /etc/dnsmasq.conf
+            systemctl restart dnsmasq
+        fi
+        
+        # 3. 创建后台扫描服务
+        cat > /etc/systemd/system/dns-unlock-harvester.service << EOF
+[Unit]
+Description=DNS Unlock Domain Harvester (Auto Learn)
+After=network.target dnsmasq.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash $(realpath "$0") --sweep
+Restart=always
+RestartSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable dns-unlock-harvester
+        systemctl start dns-unlock-harvester
+        log_info "后台自动学习模式已启动！服务会每 10 分钟全自动分析并补全域名。"
+    fi
+}
+
+# 静默扫面模式 (给后台服务调用)
+silent_sweep() {
+    local log_file="/var/log/dnsmasq.log"
+    if [[ ! -f "$log_file" ]]; then return; fi
+    
+    # 提取现有规则
+    local existing_domains=$(grep "address=/" /etc/dnsmasq.d/unlock.conf 2>/dev/null | cut -d/ -f2 | sort -u)
+    
+    # 扫描最近的请求
+    local caught_domains=$(tail -n 1000 "$log_file" | grep "query\[" | awk '{print $6}' | sort -u)
+    
+    local added_count=0
+    for domain in $caught_domains; do
+        if ! echo "$existing_domains" | grep -q "^$domain$"; then
+            # 过滤列表
+            if [[ ! "$domain" =~ ^(localhost|ip6-|google|gstatic|apple|icloud|microsoft|windows|akamai|edge|doubleclick|analytics)$ ]]; then
+                echo -e "\n# [Auto-Learned] $(date '+%Y-%m-%d %H:%M')" >> /etc/dnsmasq.d/unlock.conf
+                echo "address=/${domain}/$PUBLIC_IP" >> /etc/dnsmasq.d/unlock.conf
+                echo "address=/${domain}/::" >> /etc/dnsmasq.d/unlock.conf
+                added_count=$((added_count+1))
+            fi
+        fi
+    done
+    
+    if [ $added_count -gt 0 ]; then
+        systemctl restart dnsmasq
+    fi
 }
 
 # 显示服务状态
@@ -1111,6 +1212,7 @@ show_status() {
     echo -e "${BLUE}============================================${NC}"
     echo ""
     echo -e "Dnsmasq 状态:   $(systemctl is-active dnsmasq 2>/dev/null || echo '未安装')"
+    echo -e "后台自动学习:   $(systemctl is-active dns-unlock-harvester 2>/dev/null || echo 'inactive (未开启)')"
     if systemctl is-active gost-unlock &>/dev/null; then
         echo -e "GOST 状态:      ${GREEN}active${NC}"
     elif systemctl is-active sniproxy &>/dev/null; then
@@ -1150,6 +1252,17 @@ main() {
                 # 需要 PUBLIC_IP
                 PUBLIC_IP=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" /etc/dnsmasq.d/unlock.conf | head -1 2>/dev/null || curl -s https://api.ipify.org)
                 learn_domains
+                exit 0
+                ;;
+            --auto-learn)
+                check_root
+                toggle_auto_learn
+                exit 0
+                ;;
+            --sweep)
+                # 后台静默调用，不需要输出到终端
+                PUBLIC_IP=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" /etc/dnsmasq.d/unlock.conf | head -1 2>/dev/null || curl -s https://api.ipify.org)
+                silent_sweep
                 exit 0
                 ;;
             --update-domains)
