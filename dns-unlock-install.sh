@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.2.0"
+VERSION="1.2.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="智能检测依赖，已安装的包不再重复安装"
+CHANGELOG="修复 curl | bash 管道模式下无法选择日志等级的问题"
 
 set -e
 
@@ -35,7 +35,19 @@ select_log_level() {
     echo -e "  ${GREEN}2)${NC} INFO  - 标准信息（推荐，记录主要操作）"
     echo -e "  ${GREEN}3)${NC} WARN  - 仅警告和错误（最少日志，适合生产环境）"
     echo ""
-    read -p "请输入选项 [1-3] (默认: 2): " choice
+    
+    # 检查是否可以从终端读取（支持管道模式）
+    if [ -t 0 ]; then
+        # 标准输入是终端，可以正常读取
+        read -p "请输入选项 [1-3] (默认: 2): " choice
+    elif [ -e /dev/tty ]; then
+        # 通过管道执行，尝试从 /dev/tty 读取
+        read -p "请输入选项 [1-3] (默认: 2): " choice < /dev/tty
+    else
+        # 无法交互，使用默认值
+        log_warn "无法获取用户输入，使用默认日志等级: INFO"
+        choice="2"
+    fi
     
     case "$choice" in
         1)
