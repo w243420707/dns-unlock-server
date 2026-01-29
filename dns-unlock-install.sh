@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.5.1"
+VERSION="1.5.2"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="支持手动指定入口 IP，解决 WARP 等场景下 IP 检测错误"
+CHANGELOG="强制 SNI Proxy 使用外部 DNS 解析，修复路由死循环"
 
 set -e
 
@@ -249,6 +249,12 @@ configure_sniproxy() {
     cat > /etc/sniproxy.conf << SNICONF
 user daemon
 pidfile /run/sniproxy.pid
+
+# 强制使用外部 DNS 解析目标 IP，防止死循环
+resolver {
+    nameserver 8.8.8.8
+    mode ipv4_only
+}
 
 error_log {
     syslog daemon
