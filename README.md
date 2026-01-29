@@ -8,9 +8,9 @@
 - 🚀 一键自动安装配置
 - 🔧 基于 Dnsmasq + SNI Proxy 架构
 - 📝 可选日志等级（DEBUG / INFO / WARN）
-- 🛡️ 自动禁用并持久化关闭系统防火墙 (UFW/Firewalld/Iptables)
 - 🚀 支持多种代理引擎: SNI Proxy 或 GOST (专为 WARP 优化)
 - 🌍 支持域名关键词劫持与自定义追加模式
+- 🧠 **智能学习模式**: 根据实际 DNS 查询自动捕捉并添加解锁域名 (New!)
 
 ## 系统要求
 
@@ -85,6 +85,9 @@ tail -f /var/log/dnsmasq.log
 
 # 更新解锁域名列表（特别是 Geosite 模式）
 ./dns-unlock-install.sh --update-domains
+
+# 进入智能学习模式（根据实际 App 用量自动补全域名）
+./dns-unlock-install.sh --learn
 ```
 
 ## 开放端口

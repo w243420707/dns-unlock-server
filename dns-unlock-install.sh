@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="2.0.0"
+VERSION="2.1.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="全面支持流媒体测试脚本中的所有主流项目 (数十个平台全覆盖)"
+CHANGELOG="新增智能学习模式 (--learn)，支持根据 DNS 查询自动捕捉并添加域名"
 
 set -e
 
@@ -886,6 +886,7 @@ show_help() {
     echo "选项:"
     echo "  --help, -h          显示此帮助信息"
     echo "  --status            显示当前服务状态"
+    echo "  --learn             进入智能学习模式，自动捕捉新域名"
     echo "  --update-domains    更新 Geosite 解锁域名列表"
     echo "  --log-level LEVEL   调整日志等级 (debug/info/warn)"
     echo ""
@@ -999,6 +1000,90 @@ update_domains() {
     log_info "域名规则已更新并重启服务"
 }
 
+# 智能学习模式
+learn_domains() {
+    log_info "进入智能学习模式..."
+    echo -e "${YELLOW}该模式会监控你当前的 DNS 请求，自动提取尚未解锁的域名。${NC}"
+    
+    # 确保开启了查询日志
+    if ! grep -q "log-queries" /etc/dnsmasq.conf; then
+        log_info "正在临时开启 DNS 查询日志..."
+        sed -i 's/#log-queries/log-queries/' /etc/dnsmasq.conf
+        # 兼容原本可能没写 # 的情况，如果没有 log-queries 则追加
+        if ! grep -q "log-queries" /etc/dnsmasq.conf; then
+            echo "log-queries" >> /etc/dnsmasq.conf
+            echo "log-facility=/var/log/dnsmasq.log" >> /etc/dnsmasq.conf
+        fi
+        systemctl restart dnsmasq
+    fi
+
+    local start_marker="LEARN_START_$(date +%s)"
+    logger -t dnsmasq "$start_marker" # 在日志中插入标记点
+    
+    echo ""
+    echo -e "${GREEN}============================================${NC}"
+    echo -e "${YELLOW}请现在打开你想要解锁的 App 或网站进行操作...${NC}"
+    echo -e "${YELLOW}操作完成后，请回到这里按下 ${GREEN}[回车键]${NC} 解析捕捉到的域名。"
+    echo -e "${GREEN}============================================${NC}"
+    read -p ""
+    
+    log_info "正在分析日志并提取新域名..."
+    
+    # 提取现有规则中的域名用于过滤
+    local existing_domains=$(grep "address=/" /etc/dnsmasq.d/unlock.conf 2>/dev/null | cut -d/ -f2 | sort -u)
+    
+    # 从标记点开始提取 query
+    local caught_domains=$(sed -n "/$start_marker/,\$p" /var/log/dnsmasq.log | grep "query\[" | awk '{print $6}' | sort -u)
+    
+    local to_add=()
+    for domain in $caught_domains; do
+        # 排除已存在的域名和一些常见的无意义域名
+        if ! echo "$existing_domains" | grep -q "^$domain$"; then
+            if [[ ! "$domain" =~ ^(localhost|ip6-localhost|google.com|gstatic.com|apple.com|icloud.com)$ ]]; then
+                to_add+=("$domain")
+            fi
+        fi
+    done
+    
+    if [ ${#to_add[@]} -eq 0 ]; then
+        log_warn "未发现新的、有意义的域名请求。"
+        return
+    fi
+    
+    echo ""
+    echo -e "${BLUE}检测到以下待选域名:${NC}"
+    for i in "${!to_add[@]}"; do
+        echo -e "  ${GREEN}$((i+1)))${NC} ${to_add[$i]}"
+    done
+    echo ""
+    read -p "请输入要添加的序号 (如 1,2,5 或 直接回车添加全部, 'q' 退出): " user_input
+    
+    if [[ "$user_input" == "q" ]]; then
+        return
+    fi
+    
+    local selected=()
+    if [[ -z "$user_input" ]]; then
+        selected=("${to_add[@]}")
+    else
+        IFS=',' read -ra ADDR <<< "$user_input"
+        for idx in "${ADDR[@]}"; do
+            selected+=("${to_add[$((idx-1))]}")
+        done
+    fi
+    
+    if [ ${#selected[@]} -gt 0 ]; then
+        echo -e "\n# ============ Learned Domains ($(date '+%Y-%m-%d %H:%M')) ============" >> /etc/dnsmasq.d/unlock.conf
+        for dom in "${selected[@]}"; do
+            log_info "添加域名: $dom"
+            echo "address=/${dom}/$PUBLIC_IP" >> /etc/dnsmasq.d/unlock.conf
+            echo "address=/${dom}/::" >> /etc/dnsmasq.d/unlock.conf
+        done
+        systemctl restart dnsmasq
+        log_info "解锁列表已更新并生效！"
+    fi
+}
+
 # 显示服务状态
 show_status() {
     echo ""
@@ -1039,6 +1124,13 @@ main() {
                 ;;
             --status)
                 show_status
+                exit 0
+                ;;
+            --learn)
+                check_root
+                # 需要 PUBLIC_IP
+                PUBLIC_IP=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" /etc/dnsmasq.d/unlock.conf | head -1 2>/dev/null || curl -s https://api.ipify.org)
+                learn_domains
                 exit 0
                 ;;
             --update-domains)
