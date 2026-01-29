@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="2.2.1"
+VERSION="2.2.2"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="在安装引导中增加后台自动学习模式的选择开关"
+CHANGELOG="修复后台自动学习模式下的配置冲突与启动失败问题"
 
 set -e
 
@@ -1172,11 +1172,18 @@ toggle_auto_learn() {
         chmod 664 /var/log/dnsmasq.log
         chown dnsmasq:nogroup /var/log/dnsmasq.log 2>/dev/null || chown nobody:nogroup /var/log/dnsmasq.log 2>/dev/null || true
         
-        # 2. 开启 dnsmasq 查询日志
-        if ! grep -q "^log-queries" /etc/dnsmasq.conf; then
-            echo "log-queries" >> /etc/dnsmasq.conf
-            echo "log-facility=/var/log/dnsmasq.log" >> /etc/dnsmasq.conf
+        # 2. 开启 dnsmasq 查询日志 (先清理旧配置防止冲突)
+        sed -i '/^log-queries/d' /etc/dnsmasq.conf
+        sed -i '/^log-facility/d' /etc/dnsmasq.conf
+        echo "log-queries" >> /etc/dnsmasq.conf
+        echo "log-facility=/var/log/dnsmasq.log" >> /etc/dnsmasq.conf
+        
+        # 3. 语法自检
+        if dnsmasq --test 2>&1 | grep -q "syntax check OK"; then
             systemctl restart dnsmasq
+        else
+            log_error "Dnsmasq 配置语法错误，请检查 /etc/dnsmasq.conf"
+            return 1
         fi
         
         # 3. 创建后台扫描服务
