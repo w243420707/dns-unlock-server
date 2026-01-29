@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.4.0"
+VERSION="1.5.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增 --log-level 参数，可在不重装的情况下调整日志等级"
+CHANGELOG="改用 apt 包安装 SNI Proxy，大幅提高安装成功率"
 
 set -e
 
@@ -152,53 +152,37 @@ install_dependencies() {
 # 安装 SNI Proxy
 install_sniproxy() {
     # 检查 SNI Proxy 是否已安装
-    if [ -f /usr/local/sbin/sniproxy ]; then
-        log_info "SNI Proxy 已安装，跳过编译安装"
+    if command -v sniproxy &> /dev/null; then
+        log_info "SNI Proxy 已安装，跳过安装"
         return
     fi
     
     log_info "开始安装 SNI Proxy..."
     
-    # 检查并安装编译 sniproxy 所需的额外依赖
-    log_info "检查编译依赖..."
+    # 使用 apt 包管理器安装（更可靠）
+    apt-get update -y >/dev/null 2>&1
     
-    # 安装 devscripts (包含 debchange) 如果缺失
-    if ! command -v debchange &> /dev/null; then
-        log_info "安装 devscripts (debchange)..."
-        apt-get install -y devscripts >/dev/null 2>&1 || true
+    # 先删除可能存在的旧编译版本
+    rm -f /usr/local/sbin/sniproxy 2>/dev/null || true
+    rm -f /etc/systemd/system/sniproxy.service 2>/dev/null || true
+    
+    # 安装 sniproxy 包
+    if apt-get install -y sniproxy 2>/dev/null; then
+        log_info "SNI Proxy (apt) 安装完成"
+    else
+        log_warn "apt 安装失败，尝试从源码编译..."
+        # 备用：从源码编译
+        apt-get install -y git autoconf automake libtool libev-dev libpcre2-dev libudns-dev build-essential >/dev/null 2>&1
+        cd /tmp
+        rm -rf sniproxy
+        git clone https://github.com/dlundquist/sniproxy.git
+        cd sniproxy
+        ./autogen.sh 2>/dev/null || true
+        ./configure
+        make
+        make install
+        log_info "SNI Proxy (源码) 安装完成"
     fi
-    
-    # 检查 autoconf 版本，如果低于 2.71 则升级
-    AUTOCONF_VERSION=$(autoconf --version 2>/dev/null | head -n1 | grep -oP '\d+\.\d+' | head -1)
-    if [ -n "$AUTOCONF_VERSION" ]; then
-        MAJOR=$(echo "$AUTOCONF_VERSION" | cut -d. -f1)
-        MINOR=$(echo "$AUTOCONF_VERSION" | cut -d. -f2)
-        if [ "$MAJOR" -lt 2 ] || { [ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 71 ]; }; then
-            log_warn "autoconf 版本 ($AUTOCONF_VERSION) 过低，需要 2.71+，正在从源码安装..."
-            cd /tmp
-            rm -rf autoconf-2.71*
-            wget -q https://ftp.gnu.org/gnu/autoconf/autoconf-2.71.tar.gz
-            tar -xzf autoconf-2.71.tar.gz
-            cd autoconf-2.71
-            ./configure --prefix=/usr >/dev/null 2>&1
-            make >/dev/null 2>&1
-            make install >/dev/null 2>&1
-            log_info "autoconf 2.71 安装完成"
-        fi
-    fi
-    
-    cd /tmp
-    rm -rf sniproxy
-    git clone https://github.com/dlundquist/sniproxy.git
-    cd sniproxy
-    
-    # 运行 autogen，忽略 debchange 警告
-    ./autogen.sh 2>/dev/null || true
-    ./configure
-    make
-    make install
-    
-    log_info "SNI Proxy 安装完成"
 }
 
 # 配置 SNI Proxy
@@ -216,12 +200,11 @@ configure_sniproxy() {
             systemctl stop nginx 2>/dev/null || true
             systemctl stop apache2 2>/dev/null || true
             systemctl stop httpd 2>/dev/null || true
-            # 等待端口释放
+            systemctl stop sniproxy 2>/dev/null || true
             sleep 2
         fi
     done
     
-    mkdir -p /etc/sniproxy
     mkdir -p /var/log/sniproxy
     chown daemon:daemon /var/log/sniproxy 2>/dev/null || true
     
@@ -238,13 +221,13 @@ configure_sniproxy() {
             ;;
     esac
     
-    # 写入 SNI Proxy 配置文件
-    cat > /etc/sniproxy/sniproxy.conf << SNICONF
+    # 写入 SNI Proxy 配置文件（apt 版本使用 /etc/sniproxy.conf）
+    cat > /etc/sniproxy.conf << SNICONF
 user daemon
 pidfile /run/sniproxy.pid
 
 error_log {
-    filename /var/log/sniproxy/error.log
+    syslog daemon
     priority ${SNIPROXY_LOG_PRIORITY}
 }
 
@@ -269,41 +252,23 @@ table https_hosts {
 }
 SNICONF
     
-    # 创建 systemd 服务
-    cat > /etc/systemd/system/sniproxy.service << 'EOF'
-[Unit]
-Description=SNI Proxy Service
-After=network.target
-
-[Service]
-Type=forking
-PIDFile=/run/sniproxy.pid
-ExecStart=/usr/local/sbin/sniproxy -c /etc/sniproxy/sniproxy.conf
-ExecReload=/bin/kill -HUP $MAINPID
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+    # 重启 SNI Proxy 服务
     systemctl daemon-reload
-    systemctl enable sniproxy
+    systemctl enable sniproxy 2>/dev/null || true
     
-    # 尝试启动服务并检查状态
-    if systemctl start sniproxy; then
+    if systemctl restart sniproxy 2>/dev/null; then
         log_info "SNI Proxy 配置完成并已启动"
     else
-        log_error "SNI Proxy 启动失败，正在尝试诊断..."
-        # 显示详细错误信息
-        journalctl -u sniproxy --no-pager -n 10 2>/dev/null || true
-        # 尝试直接运行以获取错误
-        /usr/local/sbin/sniproxy -c /etc/sniproxy/sniproxy.conf -f 2>&1 &
+        log_warn "SNI Proxy 服务启动失败，尝试手动启动..."
+        # 尝试直接运行
+        pkill -9 sniproxy 2>/dev/null || true
+        sleep 1
+        sniproxy 2>/dev/null &
         sleep 2
         if pgrep -x sniproxy > /dev/null; then
             log_info "SNI Proxy 已通过备用方式启动"
         else
-            log_warn "SNI Proxy 启动失败，请手动检查配置"
+            log_error "SNI Proxy 启动失败，请手动检查"
         fi
     fi
 }
