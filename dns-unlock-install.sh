@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="2.1.0"
+VERSION="2.1.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增智能学习模式 (--learn)，支持根据 DNS 查询自动捕捉并添加域名"
+CHANGELOG="将智能学习模式集成到安装引导菜单"
 
 set -e
 
@@ -185,14 +185,15 @@ fetch_geosite_category() {
 select_unlock_scope() {
     echo ""
     echo -e "${BLUE}请选择解锁域名范围:${NC}"
-    echo -e "  ${GREEN}1)${NC} 常用关键词列表 (推荐：Netflix/Disney+/Gemini/OpenAI 等)"
-    echo -e "  ${GREEN}2)${NC} Geosite 分类全量模式 (进阶：通过分类动态下载)"
+    echo -e "  ${GREEN}1)${NC} 常用关键词列表 (推荐：一键解锁主流流媒体+AI)"
+    echo -e "  ${GREEN}2)${NC} Geosite 分类模式 (进阶：按分类动态下载规则)"
+    echo -e "  ${GREEN}3)${NC} 🧠 智能学习模式 (黑科技：通过实际流量自动抓取域名)"
     echo ""
     
     if [ -t 0 ]; then
-        read -p "请输入选项 [1-2] (默认: 1): " scope_choice
+        read -p "请输入选项 [1-3] (默认: 1): " scope_choice
     elif [ -e /dev/tty ]; then
-        read -p "请输入选项 [1-2] (默认: 1): " scope_choice < /dev/tty
+        read -p "请输入选项 [1-3] (默认: 1): " scope_choice < /dev/tty
     else
         scope_choice="1"
     fi
@@ -213,13 +214,17 @@ select_unlock_scope() {
             GEOSITE_CATEGORIES="$user_categories"
         fi
         log_info "已选择 Geosite 模式，分类: ${GREEN}$GEOSITE_CATEGORIES${NC}"
+    elif [[ "$scope_choice" == "3" ]]; then
+        UNLOCK_MODE="basic" # 先安装基础列表
+        RUN_LEARN_AFTER_INSTALL="true"
+        log_info "已开启安装后的智能学习模式"
     else
         UNLOCK_MODE="basic"
         log_info "已选择常用关键词模式"
         
         # 允许用户追加自定义域名
         echo ""
-        echo -e "${YELLOW}是否需要追加额外的解锁域名？（如: bahamut.com.tw, hinet.net）${NC}"
+        echo -e "${YELLOW}是否需要追加额外的解锁域名？（如: bahamut.com.tw）${NC}"
         if [ -t 0 ]; then
             read -p "追加域名 (逗号分隔，无则直接回车): " user_custom
         elif [ -e /dev/tty ]; then
@@ -1175,6 +1180,11 @@ main() {
     configure_dnsmasq
     configure_firewall
     show_result
+
+    # 如果选择了学习模式，则在最后执行
+    if [[ "$RUN_LEARN_AFTER_INSTALL" == "true" ]]; then
+        learn_domains
+    fi
 }
 
 main "$@"
