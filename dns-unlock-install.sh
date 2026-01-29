@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="2.1.1"
+VERSION="2.1.2"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="将智能学习模式集成到安装引导菜单"
+CHANGELOG="修复学习模式下 Dnsmasq 日志权限导致的启动失败问题"
 
 set -e
 
@@ -1010,16 +1010,25 @@ learn_domains() {
     log_info "进入智能学习模式..."
     echo -e "${YELLOW}该模式会监控你当前的 DNS 请求，自动提取尚未解锁的域名。${NC}"
     
+    # 确认并准备日志文件权限
+    touch /var/log/dnsmasq.log
+    chmod 664 /var/log/dnsmasq.log
+    chown dnsmasq:nogroup /var/log/dnsmasq.log 2>/dev/null || chown nobody:nogroup /var/log/dnsmasq.log 2>/dev/null || true
+
     # 确保开启了查询日志
-    if ! grep -q "log-queries" /etc/dnsmasq.conf; then
-        log_info "正在临时开启 DNS 查询日志..."
-        sed -i 's/#log-queries/log-queries/' /etc/dnsmasq.conf
-        # 兼容原本可能没写 # 的情况，如果没有 log-queries 则追加
-        if ! grep -q "log-queries" /etc/dnsmasq.conf; then
-            echo "log-queries" >> /etc/dnsmasq.conf
-            echo "log-facility=/var/log/dnsmasq.log" >> /etc/dnsmasq.conf
-        fi
-        systemctl restart dnsmasq
+    if ! grep -q "^log-queries" /etc/dnsmasq.conf; then
+        log_info "正在开启临时监控日志..."
+        # 先删除可能存在的冲突配置
+        sed -i '/log-queries/d' /etc/dnsmasq.conf
+        sed -i '/log-facility/d' /etc/dnsmasq.conf
+        
+        # 写入新配置
+        echo "log-queries" >> /etc/dnsmasq.conf
+        echo "log-facility=/var/log/dnsmasq.log" >> /etc/dnsmasq.conf
+        systemctl restart dnsmasq || {
+            log_error "Dnsmasq 重新启动失败，请检查配置或手动运行: dnsmasq --test"
+            return 1
+        }
     fi
 
     local start_marker="LEARN_START_$(date +%s)"
@@ -1087,6 +1096,11 @@ learn_domains() {
         systemctl restart dnsmasq
         log_info "解锁列表已更新并生效！"
     fi
+
+    # 学习结束，关闭日志以节省性能
+    log_info "正在关闭临时日志监控..."
+    sed -i '/log-queries/d' /etc/dnsmasq.conf
+    systemctl restart dnsmasq
 }
 
 # 显示服务状态
