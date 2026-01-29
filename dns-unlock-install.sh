@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.1.0"
+VERSION="1.2.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="新增日志等级选择功能 (DEBUG/INFO/WARN)"
+CHANGELOG="智能检测依赖，已安装的包不再重复安装"
 
 set -e
 
@@ -89,17 +89,62 @@ stop_conflicting_services() {
     fi
 }
 
+# 检查软件包是否已安装
+is_package_installed() {
+    dpkg -l "$1" 2>/dev/null | grep -q "^ii"
+}
+
 # 安装依赖
 install_dependencies() {
-    log_info "更新软件包列表..."
-    apt-get update -y
+    log_info "检查依赖安装状态..."
     
-    log_info "安装必要依赖..."
-    apt-get install -y dnsmasq git autoconf automake gettext libtool libev-dev libpcre2-dev libcurl4-openssl-dev libudns-dev build-essential curl wget
+    # 定义需要的软件包列表
+    REQUIRED_PACKAGES=(
+        "dnsmasq"
+        "git"
+        "autoconf"
+        "automake"
+        "gettext"
+        "libtool"
+        "libev-dev"
+        "libpcre2-dev"
+        "libcurl4-openssl-dev"
+        "libudns-dev"
+        "build-essential"
+        "curl"
+        "wget"
+    )
+    
+    # 检查哪些包需要安装
+    MISSING_PACKAGES=()
+    for pkg in "${REQUIRED_PACKAGES[@]}"; do
+        if is_package_installed "$pkg"; then
+            log_info "  ✓ $pkg 已安装"
+        else
+            log_warn "  ✗ $pkg 未安装"
+            MISSING_PACKAGES+=("$pkg")
+        fi
+    done
+    
+    # 如果有缺失的包，则安装
+    if [ ${#MISSING_PACKAGES[@]} -eq 0 ]; then
+        log_info "所有依赖已安装，跳过安装步骤"
+    else
+        log_info "正在安装缺失的依赖: ${MISSING_PACKAGES[*]}"
+        apt-get update -y
+        apt-get install -y "${MISSING_PACKAGES[@]}"
+        log_info "依赖安装完成"
+    fi
 }
 
 # 安装 SNI Proxy
 install_sniproxy() {
+    # 检查 SNI Proxy 是否已安装
+    if [ -f /usr/local/sbin/sniproxy ]; then
+        log_info "SNI Proxy 已安装，跳过编译安装"
+        return
+    fi
+    
     log_info "开始安装 SNI Proxy..."
     
     cd /tmp
