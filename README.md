@@ -24,9 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/w243420707/dns-unlock-server/master
 或者下载后执行：
 
 ```bash
-wget https://raw.githubusercontent.com/w243420707/dns-unlock-server/master/dns-unlock-install.sh
-chmod +x dns-unlock-install.sh
-sudo bash dns-unlock-install.sh
+wget -O dns-unlock-install.sh https://raw.githubusercontent.com/w243420707/dns-unlock-server/master/dns-unlock-install.sh && chmod +x dns-unlock-install.sh && sudo ./dns-unlock-install.sh
 ```
 
 ## 支持的流媒体平台
