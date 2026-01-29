@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.5.0"
+VERSION="1.5.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="改用 apt 包安装 SNI Proxy，大幅提高安装成功率"
+CHANGELOG="支持手动指定入口 IP，解决 WARP 等场景下 IP 检测错误"
 
 set -e
 
@@ -75,12 +75,36 @@ check_root() {
 
 # 获取服务器公网 IP
 get_public_ip() {
-    PUBLIC_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || curl -s https://icanhazip.com)
+    # 自动检测公网 IP
+    DETECTED_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || curl -s https://icanhazip.com)
+    
+    echo ""
+    echo -e "${BLUE}检测到的公网 IP: ${GREEN}${DETECTED_IP}${NC}"
+    echo -e "${YELLOW}注意: 如果你使用了 WARP 或其他出口代理，检测到的可能是出口 IP${NC}"
+    echo -e "${YELLOW}      你需要输入服务器的入口 IP（用于接收 DNS 请求）${NC}"
+    echo ""
+    
+    # 让用户确认或输入正确的 IP
+    if [ -t 0 ]; then
+        read -p "请输入服务器入口 IP [直接回车使用 $DETECTED_IP]: " USER_IP
+    elif [ -e /dev/tty ]; then
+        read -p "请输入服务器入口 IP [直接回车使用 $DETECTED_IP]: " USER_IP < /dev/tty
+    else
+        USER_IP=""
+    fi
+    
+    if [[ -n "$USER_IP" ]]; then
+        PUBLIC_IP="$USER_IP"
+    else
+        PUBLIC_IP="$DETECTED_IP"
+    fi
+    
     if [[ -z "$PUBLIC_IP" ]]; then
         log_error "无法获取公网 IP，请检查网络连接"
         exit 1
     fi
-    log_info "检测到公网 IP: ${BLUE}$PUBLIC_IP${NC}"
+    
+    log_info "使用入口 IP: ${GREEN}$PUBLIC_IP${NC}"
 }
 
 # 停止占用 53 端口的服务
