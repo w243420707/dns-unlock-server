@@ -5,6 +5,11 @@
 # 支持系统: Ubuntu 18.04 / 20.04 / 22.04
 # =============================================================================
 
+# 版本信息
+VERSION="1.1.0"
+LAST_UPDATE="2026-01-29"
+CHANGELOG="新增日志等级选择功能 (DEBUG/INFO/WARN)"
+
 set -e
 
 # 默认日志等级
@@ -345,6 +350,8 @@ main() {
     echo -e "${BLUE}============================================${NC}"
     echo -e "${BLUE}   DNS 解锁服务器一键安装脚本 (Ubuntu)${NC}"
     echo -e "${BLUE}============================================${NC}"
+    echo -e "  版本: ${GREEN}v$VERSION${NC}  更新日期: $LAST_UPDATE"
+    echo -e "  ${YELLOW}最近更新: $CHANGELOG${NC}"
     echo ""
     
     check_root
