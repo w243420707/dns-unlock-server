@@ -41,6 +41,7 @@ wget -O dns-unlock-install.sh https://raw.githubusercontent.com/w243420707/dns-u
 | YouTube Premium | youtube.com |
 | Spotify | spotify.com |
 | Bilibili (港澳台) | bilibili.com |
+| Google Gemini | gemini.google.com, generativelanguage.googleapis.com 等 |
 
 ## 使用方法
 
@@ -90,6 +91,7 @@ tail -f /var/log/dnsmasq.log
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
+| v1.6.1 | 2026-01-29 | 新增对 Google Gemini AI 的解锁支持 |
 | v1.6.0 | 2026-01-29 | 支持 GOST 代理引擎，优化对 WARP SOCKS5 的兼容性 |
 | v1.5.3 | 2026-01-29 | 阻断解锁域名的 IPv6 AAAA 记录，防止 IPv6 泄露 |
 | v1.5.2 | 2026-01-29 | 强制 SNI Proxy 使用外部 DNS，修复路由死循环 |

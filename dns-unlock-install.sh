@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.6.0"
+VERSION="1.6.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="支持 GOST 代理引擎，优化对 WARP SOCKS5 的兼容性"
+CHANGELOG="新增对 Google Gemini AI 的解锁支持"
 
 set -e
 
@@ -517,6 +517,22 @@ address=/spotifycdn.com/$PUBLIC_IP
 address=/bilibili.com/$PUBLIC_IP
 address=/bilivideo.com/$PUBLIC_IP
 address=/biliapi.net/$PUBLIC_IP
+
+# ============ Google Gemini ============
+address=/gemini.google.com/$PUBLIC_IP
+address=/gemini.google.com/::
+address=/bard.google.com/$PUBLIC_IP
+address=/bard.google.com/::
+address=/aistudio.google.com/$PUBLIC_IP
+address=/aistudio.google.com/::
+address=/deepmind.com/$PUBLIC_IP
+address=/deepmind.com/::
+address=/deepmind.google/$PUBLIC_IP
+address=/deepmind.google/::
+address=/generativelanguage.googleapis.com/$PUBLIC_IP
+address=/generativelanguage.googleapis.com/::
+address=/alkalimessages-pa.googleapis.com/$PUBLIC_IP
+address=/alkalimessages-pa.googleapis.com/::
 
 # ============ IP 检测网站 ============
 address=/ip.sb/$PUBLIC_IP
