@@ -402,6 +402,14 @@ address=/spotifycdn.com/$PUBLIC_IP
 address=/bilibili.com/$PUBLIC_IP
 address=/bilivideo.com/$PUBLIC_IP
 address=/biliapi.net/$PUBLIC_IP
+
+# ============ IP 检测网站 ============
+address=/ip.sb/$PUBLIC_IP
+address=/ip.gs/$PUBLIC_IP
+address=/ip.me/$PUBLIC_IP
+address=/ipinfo.io/$PUBLIC_IP
+address=/fast.com/$PUBLIC_IP
+address=/speedtest.net/$PUBLIC_IP
 EOF
 
     # 重启 Dnsmasq
