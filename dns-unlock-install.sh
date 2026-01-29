@@ -32,21 +32,21 @@ select_log_level() {
     echo ""
     echo -e "${BLUE}请选择日志记录等级:${NC}"
     echo -e "  ${GREEN}1)${NC} DEBUG - 详细调试信息（包含所有 DNS 查询日志）"
-    echo -e "  ${GREEN}2)${NC} INFO  - 标准信息（推荐，记录主要操作）"
-    echo -e "  ${GREEN}3)${NC} WARN  - 仅警告和错误（最少日志，适合生产环境）"
+    echo -e "  ${GREEN}2)${NC} INFO  - 标准信息（记录主要操作）"
+    echo -e "  ${GREEN}3)${NC} WARN  - 仅警告和错误（推荐，最少日志）"
     echo ""
     
     # 检查是否可以从终端读取（支持管道模式）
     if [ -t 0 ]; then
         # 标准输入是终端，可以正常读取
-        read -p "请输入选项 [1-3] (默认: 2): " choice
+        read -p "请输入选项 [1-3] (默认: 3): " choice
     elif [ -e /dev/tty ]; then
         # 通过管道执行，尝试从 /dev/tty 读取
-        read -p "请输入选项 [1-3] (默认: 2): " choice < /dev/tty
+        read -p "请输入选项 [1-3] (默认: 3): " choice < /dev/tty
     else
         # 无法交互，使用默认值
-        log_warn "无法获取用户输入，使用默认日志等级: INFO"
-        choice="2"
+        log_warn "无法获取用户输入，使用默认日志等级: WARN"
+        choice="3"
     fi
     
     case "$choice" in
@@ -54,13 +54,13 @@ select_log_level() {
             LOG_LEVEL="debug"
             log_info "已选择日志等级: DEBUG"
             ;;
-        3)
-            LOG_LEVEL="warn"
-            log_info "已选择日志等级: WARN"
-            ;;
-        *)
+        2)
             LOG_LEVEL="info"
             log_info "已选择日志等级: INFO"
+            ;;
+        *)
+            LOG_LEVEL="warn"
+            log_info "已选择日志等级: WARN"
             ;;
     esac
 }
