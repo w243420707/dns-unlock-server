@@ -342,6 +342,11 @@ no-resolv
 server=8.8.8.8
 server=1.1.1.1
 cache-size=10000
+
+# 允许任意 IP 查询（重要：解锁服务器必须开启）
+listen-address=0.0.0.0
+bind-interfaces
+
 $DNSMASQ_LOG_CONFIG
 
 # 引入流媒体解锁规则
