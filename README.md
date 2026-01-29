@@ -10,7 +10,7 @@
 - 📝 可选日志等级（DEBUG / INFO / WARN）
 - 🛡️ 自动禁用并持久化关闭系统防火墙 (UFW/Firewalld/Iptables)
 - 🚀 支持多种代理引擎: SNI Proxy 或 GOST (专为 WARP 优化)
-- 🌍 支持 Geosite 动态域名分流: 支持一键解锁 `openai`、`netflix`、`telegram` 等分类域名
+- 🌍 支持域名关键词劫持与自定义追加模式
 
 ## 系统要求
 
@@ -95,6 +95,7 @@ tail -f /var/log/dnsmasq.log
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
+| v1.8.1 | 2026-01-29 | 回归域名关键词模式为默认，支持自定义域名追加 |
 | v1.8.0 | 2026-01-29 | Geosite 默认支持全量非中国域名 (geolocation-!cn)，性能大幅优化 |
 | v1.7.0 | 2026-01-29 | 支持 Geosite 动态域名分类解锁，新增 --update-domains 命令 |
 | v1.6.1 | 2026-01-29 | 新增对 Google Gemini AI 的解锁支持 |

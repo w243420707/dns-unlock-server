@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.8.0"
+VERSION="1.8.1"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="Geosite 默认支持全量非中国域名 (geolocation-!cn)，性能大幅优化"
+CHANGELOG="回归域名关键词模式为默认，增加自定义域名追加功能"
 
 set -e
 
@@ -16,7 +16,8 @@ set -e
 LOG_LEVEL="info"
 PROXY_ENGINE="sniproxy" 
 WARP_SOCKS="127.0.0.1:40000"
-GEOSITE_CATEGORIES="geolocation-!cn" # 默认 Geosite 分类设为全量非中国域名
+GEOSITE_CATEGORIES="openai,gemini,netflix,disney" # Geosite 备选分类
+CUSTOM_DOMAINS="" # 用户手动输入的额外域名
 
 # 颜色定义
 RED='\033[0;31m'
@@ -154,26 +155,22 @@ fetch_geosite_category() {
 select_unlock_scope() {
     echo ""
     echo -e "${BLUE}请选择解锁域名范围:${NC}"
-    echo -e "  ${GREEN}1)${NC} 基础列表 (常用流媒体 + Gemini)"
-    echo -e "  ${GREEN}2)${NC} 全量 Geosite (默认解锁几乎所有海外网站，适合全能解锁)"
+    echo -e "  ${GREEN}1)${NC} 常用关键词列表 (推荐：Netflix/Disney+/Gemini/OpenAI 等)"
+    echo -e "  ${GREEN}2)${NC} Geosite 分类全量模式 (进阶：通过分类动态下载)"
     echo ""
     
     if [ -t 0 ]; then
-        read -p "请输入选项 [1-2] (默认: 2): " scope_choice
+        read -p "请输入选项 [1-2] (默认: 1): " scope_choice
     elif [ -e /dev/tty ]; then
-        read -p "请输入选项 [1-2] (默认: 2): " scope_choice < /dev/tty
+        read -p "请输入选项 [1-2] (默认: 1): " scope_choice < /dev/tty
     else
-        scope_choice="2"
+        scope_choice="1"
     fi
     
-    if [[ "$scope_choice" == "1" ]]; then
-        UNLOCK_MODE="basic"
-        log_info "已选择基础列表模式"
-    else
+    if [[ "$scope_choice" == "2" ]]; then
         UNLOCK_MODE="geosite"
         echo ""
         echo -e "${YELLOW}请输入要解锁的 Geosite 分类（逗号分隔）${NC}"
-        echo -e "支持: geolocation-!cn (全量), netflix, openai, telegram 等"
         if [ -t 0 ]; then
             read -p "分类列表 [默认: $GEOSITE_CATEGORIES]: " user_categories
         elif [ -e /dev/tty ]; then
@@ -185,7 +182,26 @@ select_unlock_scope() {
         if [[ -n "$user_categories" ]]; then
             GEOSITE_CATEGORIES="$user_categories"
         fi
-        log_info "已选择全量 Geosite 模式，分类: ${GREEN}$GEOSITE_CATEGORIES${NC}"
+        log_info "已选择 Geosite 模式，分类: ${GREEN}$GEOSITE_CATEGORIES${NC}"
+    else
+        UNLOCK_MODE="basic"
+        log_info "已选择常用关键词模式"
+        
+        # 允许用户追加自定义域名
+        echo ""
+        echo -e "${YELLOW}是否需要追加额外的解锁域名？（如: bahamut.com.tw, hinet.net）${NC}"
+        if [ -t 0 ]; then
+            read -p "追加域名 (逗号分隔，无则直接回车): " user_custom
+        elif [ -e /dev/tty ]; then
+            read -p "追加域名 (逗号分隔，无则直接回车): " user_custom < /dev/tty
+        else
+            user_custom=""
+        fi
+        
+        if [[ -n "$user_custom" ]]; then
+            CUSTOM_DOMAINS="$user_custom"
+            log_info "将额外追加域名: ${GREEN}$CUSTOM_DOMAINS${NC}"
+        fi
     fi
 }
 
@@ -586,6 +602,20 @@ address=/bilibili.com/$PUBLIC_IP
 address=/bilivideo.com/$PUBLIC_IP
 address=/biliapi.net/$PUBLIC_IP
 
+# ============ OpenAI (ChatGPT) ============
+address=/chat.com/$PUBLIC_IP
+address=/chat.com/::
+address=/chatgpt.com/$PUBLIC_IP
+address=/chatgpt.com/::
+address=/oaistatic.com/$PUBLIC_IP
+address=/oaistatic.com/::
+address=/oaiusercontent.com/$PUBLIC_IP
+address=/oaiusercontent.com/::
+address=/openai.com/$PUBLIC_IP
+address=/openai.com/::
+address=/sora.com/$PUBLIC_IP
+address=/sora.com/::
+
 # ============ Google Gemini ============
 address=/gemini.google.com/$PUBLIC_IP
 address=/gemini.google.com/::
@@ -616,6 +646,20 @@ address=/fast.com/::
 address=/speedtest.net/$PUBLIC_IP
 address=/speedtest.net/::
 EOF
+    fi
+
+    # 处理追加的自定义域名
+    if [[ -n "$CUSTOM_DOMAINS" ]]; then
+        log_info "正在追加自定义域名规则..."
+        echo -e "\n# ============ Custom Domains ============" >> /etc/dnsmasq.d/unlock.conf
+        IFS=',' read -ra C_ADDR <<< "$CUSTOM_DOMAINS"
+        for dom in "${C_ADDR[@]}"; do
+            dom_clean=$(echo "$dom" | xargs) # 去除空格
+            if [[ -n "$dom_clean" ]]; then
+                echo "address=/${dom_clean}/$PUBLIC_IP" >> /etc/dnsmasq.d/unlock.conf
+                echo "address=/${dom_clean}/::" >> /etc/dnsmasq.d/unlock.conf
+            fi
+        done
     fi
 
     # 重启 Dnsmasq
