@@ -6,9 +6,9 @@
 # =============================================================================
 
 # 版本信息
-VERSION="1.3.3"
+VERSION="1.4.0"
 LAST_UPDATE="2026-01-29"
-CHANGELOG="允许外部 IP 查询 DNS，添加 IP 检测网站到解锁规则"
+CHANGELOG="新增 --log-level 参数，可在不重装的情况下调整日志等级"
 
 set -e
 
@@ -497,8 +497,147 @@ show_result() {
     echo ""
 }
 
+# 显示帮助信息
+show_help() {
+    echo ""
+    echo -e "${BLUE}DNS 解锁服务器一键安装脚本 v$VERSION${NC}"
+    echo ""
+    echo "用法: $0 [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --help, -h          显示此帮助信息"
+    echo "  --log-level LEVEL   调整日志等级 (debug/info/warn)"
+    echo "  --status            显示当前服务状态"
+    echo ""
+    echo "示例:"
+    echo "  $0                  运行完整安装"
+    echo "  $0 --log-level warn 仅调整日志等级为 WARN"
+    echo "  $0 --status         显示服务状态"
+    echo ""
+}
+
+# 调整日志等级（不重新安装）
+adjust_log_level() {
+    local level="$1"
+    
+    case "$level" in
+        debug|DEBUG)
+            LOG_LEVEL="debug"
+            DNSMASQ_LOG_CONFIG="log-queries
+log-facility=/var/log/dnsmasq.log
+log-dhcp"
+            SNIPROXY_LOG_PRIORITY="debug"
+            ;;
+        info|INFO)
+            LOG_LEVEL="info"
+            DNSMASQ_LOG_CONFIG="log-queries
+log-facility=/var/log/dnsmasq.log"
+            SNIPROXY_LOG_PRIORITY="notice"
+            ;;
+        warn|WARN)
+            LOG_LEVEL="warn"
+            DNSMASQ_LOG_CONFIG="log-facility=/var/log/dnsmasq.log
+# 仅记录警告和错误，不记录查询"
+            SNIPROXY_LOG_PRIORITY="warning"
+            ;;
+        *)
+            log_error "无效的日志等级: $level (可选: debug/info/warn)"
+            exit 1
+            ;;
+    esac
+    
+    log_info "正在调整日志等级为: $LOG_LEVEL"
+    
+    # 获取公网 IP
+    PUBLIC_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || echo "127.0.0.1")
+    
+    # 更新 Dnsmasq 配置
+    if [ -f /etc/dnsmasq.conf ]; then
+        # 备份原配置
+        cp /etc/dnsmasq.conf /etc/dnsmasq.conf.bak.$(date +%s)
+        
+        # 重新生成配置
+        cat > /etc/dnsmasq.conf << EOF
+# DNS 解锁服务器配置
+# 日志等级: $LOG_LEVEL
+port=53
+no-resolv
+server=8.8.8.8
+server=1.1.1.1
+cache-size=10000
+
+# 允许任意 IP 查询
+listen-address=0.0.0.0
+bind-interfaces
+
+$DNSMASQ_LOG_CONFIG
+
+# 引入流媒体解锁规则
+conf-dir=/etc/dnsmasq.d/,*.conf
+EOF
+        systemctl restart dnsmasq
+        log_info "Dnsmasq 日志等级已更新"
+    else
+        log_error "未找到 Dnsmasq 配置文件，请先运行完整安装"
+        exit 1
+    fi
+    
+    # 更新 SNI Proxy 配置
+    if [ -f /etc/sniproxy/sniproxy.conf ]; then
+        sed -i "s/priority .*/priority $SNIPROXY_LOG_PRIORITY/" /etc/sniproxy/sniproxy.conf
+        systemctl restart sniproxy 2>/dev/null || true
+        log_info "SNI Proxy 日志等级已更新"
+    fi
+    
+    log_info "日志等级调整完成: $LOG_LEVEL"
+}
+
+# 显示服务状态
+show_status() {
+    echo ""
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}      DNS 解锁服务器状态${NC}"
+    echo -e "${BLUE}============================================${NC}"
+    echo ""
+    echo -e "Dnsmasq 状态:   $(systemctl is-active dnsmasq 2>/dev/null || echo '未安装')"
+    echo -e "SNI Proxy 状态: $(systemctl is-active sniproxy 2>/dev/null || echo '未安装')"
+    echo ""
+    
+    if [ -f /etc/dnsmasq.conf ]; then
+        CURRENT_LEVEL=$(grep "# 日志等级:" /etc/dnsmasq.conf 2>/dev/null | cut -d: -f2 | tr -d ' ')
+        echo -e "当前日志等级: ${GREEN}${CURRENT_LEVEL:-未知}${NC}"
+    fi
+    echo ""
+}
+
 # 主函数
 main() {
+    # 解析命令行参数
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --log-level)
+                check_root
+                adjust_log_level "$2"
+                exit 0
+                ;;
+            --status)
+                show_status
+                exit 0
+                ;;
+            *)
+                log_error "未知参数: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+        shift
+    done
+    
+    # 无参数时运行完整安装
     echo ""
     echo -e "${BLUE}============================================${NC}"
     echo -e "${BLUE}   DNS 解锁服务器一键安装脚本 (Ubuntu)${NC}"
